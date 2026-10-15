@@ -68,7 +68,7 @@ describe('WorkspaceInfoService.register', () => {
   });
 
   it('registers a project under whichever drive-root machine root owns it and is idempotent', async () => {
-    const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-register-'));
+    const projectRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-register-')));
     temporaryRoots.push(projectRoot);
     const machineRoot = path.parse(projectRoot).root;
     if (!/^[A-Za-z]:\\$/.test(machineRoot)) return;
@@ -88,7 +88,7 @@ describe('WorkspaceInfoService.register', () => {
     const service = new WorkspaceInfoService(repository, workspaceService);
     const actor = { clientId: 't', clientName: 't' };
     const first = await service.register(actor, { parentWorkspaceId: machine.value.id, path: projectRoot });
-    expect(first.ok).toBe(true);
+    expect(first.ok, first.ok ? undefined : first.error.message).toBe(true);
     if (!first.ok) return;
     expect(first.value.kind).toBe('project');
 
