@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { repositoryImportStageAclScript, repositoryImportVerifyPublishedScript } from './repository-import-scripts.js';
@@ -32,7 +32,7 @@ describe('repository import crash recovery', () => {
 
 
   it.skipIf(process.platform !== 'win32')('revalidates NTFS identity after a published destination is replaced', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-native-readback-'));
+    const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-native-readback-')));
     const requestId = '77777777-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     const taskId = 'repository-import-' + requestId;
     const owner = { clientId: 'identity-client', sessionId: 'identity-session', workspaceId: 'identity-workspace' };

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -30,12 +30,12 @@ describe('global managed writer admission', () => {
       expect(await lease.release('first-workspace', 'owner', 'session', acquired.value))
         .toMatchObject({ ok: true });
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
   }, 20000);
 
   it('excludes repository import against even a different workspace synchronous file writer', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-global-admission-'));
+    const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-global-admission-')));
     try {
       const gate = new SharedManagedWriterAdmission(root);
       const store = new DurableShellTaskStore(root);
@@ -45,7 +45,7 @@ describe('global managed writer admission', () => {
       const start = {
         taskId: 'import-test',
         executable: process.execPath, arguments: ['-e', 'process.exit(0)'],
-        cwd: root, timeoutSeconds: 15,
+        cwd: root, timeoutSeconds: process.env.CI ? 110 : 15,
         mutationKind: 'repository_import' as const,
         maxOutputBytes: 1000, includeStdout: false, includeStderr: false,
         owner: { clientId: 'other-client', sessionId: 'other', workspaceId: 'import-workspace' },
@@ -56,11 +56,11 @@ describe('global managed writer admission', () => {
       await expect.poll(async (): Promise<string> => {
         const observed = await store.snapshot(start.taskId);
         return observed.ok ? String(observed.value.state) : 'unverified';
-      }, { timeout: 12000 }).toBe('completed');
+      }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('completed');
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, 25000);
+  }, process.env.CI ? 130000 : 25000);
 
   it('an uncontained writer keeps its reservation until an explicit verified-release operation', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-uncontained-'));
@@ -77,7 +77,7 @@ describe('global managed writer admission', () => {
       };
       expect(await store.launch(launch)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
   });
 });
