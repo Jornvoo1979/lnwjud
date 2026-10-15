@@ -1,6 +1,6 @@
 import { err, ok, type InvocationAuthorization, type Result } from '@lnwjud/domain';
 import type { CheckedInvocationEnvelope, McpRegistryRuntimePort } from '../registry-runtime-port.js';
-import type { CapabilityService, EventLogBackendOptions } from '@lnwjud/capabilities';
+import type { CapabilityService, EventLogBackendOptions, WorkspaceWriterLeasePort } from '@lnwjud/capabilities';
 import type { ExtensionsService } from '@lnwjud/extensions';
 import type {
   AgentSwarmService,
@@ -17,6 +17,7 @@ import type {
   FileService,
   EngineeringPreparationService,
   GitService,
+  RepositoryImportService,
   GoalRequestCancellationPort,
   GoalContinuationService,
   GoalMutationFenceService,
@@ -28,6 +29,7 @@ import type {
   SearchService,
   ScheduledContinuationService,
   WorkspaceIndexService,
+  WorkspacePathPreflightResult,
   WorkspaceQueryService,
   WriteFileRequest,
   WorkflowTemplateService,
@@ -45,6 +47,7 @@ import type { DapSessionService } from '../dap-session-service.js';
 export interface WorkspaceInfoPort {
   info(actor: FileActor, workspaceId: string): Promise<Result<unknown>>;
   list?(actor: FileActor): Promise<Result<unknown>>;
+  preflight?(actor: FileActor, request: { readonly path: string; readonly userConfirmed?: boolean }, authorization?: InvocationAuthorization): Promise<Result<WorkspacePathPreflightResult>>;
   register?(actor: FileActor, request: {
     readonly parentWorkspaceId?: string;
     readonly path: string;
@@ -96,6 +99,7 @@ export interface McpApplicationServices {
   readonly debugSessions?: Pick<DapSessionService, 'attach' | 'request' | 'status' | 'disconnect'>;
   readonly extensions?: ExtensionsService;
   readonly workspaceInfo?: WorkspaceInfoPort;
+  readonly workspaceWriterLease?: WorkspaceWriterLeasePort;
   readonly workspaceQuery?: Pick<WorkspaceQueryService, 'tree'>;
   readonly projectSnapshot?: ProjectSnapshotPort;
   readonly project?: Pick<ProjectService, 'detect'>;
@@ -134,6 +138,7 @@ export interface McpApplicationServices {
   readonly search?: Pick<SearchService, 'searchFiles' | 'searchText'>;
   readonly workspaceIndex?: Pick<WorkspaceIndexService, 'indexWorkspace' | 'status' | 'startWatch' | 'stopWatch'>;
   readonly git?: Pick<GitService, 'status' | 'diff' | 'log' | 'run'>;
+  readonly repositoryImport?: Pick<RepositoryImportService, 'start' | 'status' | 'cancel'>;
   readonly process?: Pick<ProcessService, 'start' | 'list' | 'status' | 'logs' | 'stop' | 'previewProjectCommand' | 'startProjectCommand'>;
   readonly codex?: Pick<CodexService, 'status' | 'run' | 'list' | 'taskStatus' | 'taskLogs' | 'stop'>;
   readonly agentSwarm?: Pick<AgentSwarmService, 'start' | 'status' | 'result' | 'cancel' | 'list'>;
@@ -169,7 +174,7 @@ export interface McpToolDefinition {
   readonly permission: McpPermissionLevel;
   readonly annotations: McpToolAnnotations;
   readonly inputSchema: z.ZodType;
-  readonly outputSchema: z.ZodType;
+  readonly outputSchema?: z.ZodType;
   readonly execution: McpToolExecution;
   parse(input: unknown): Result<unknown>;
   execute(
@@ -203,7 +208,8 @@ export interface ToolConfig<T extends z.ZodType> {
   readonly permission: McpPermissionLevel;
   readonly annotations: McpToolAnnotationInput;
   readonly inputSchema: T;
-  readonly outputSchema?: z.ZodType;
+  /** Null disables output schema validation for passthrough MCP content-only responses. */
+  readonly outputSchema?: z.ZodType | null;
   readonly execution?: Partial<McpToolExecution>;
   handler(
     input: z.infer<T>,
@@ -227,7 +233,7 @@ export function defineTool<T extends z.ZodType>(config: ToolConfig<T>): McpToolD
       openWorldHint: config.annotations.openWorldHint ?? false,
     },
     inputSchema: config.inputSchema,
-    outputSchema: config.outputSchema ?? defaultStructuredOutputSchema,
+    ...(config.outputSchema === null ? {} : { outputSchema: config.outputSchema ?? defaultStructuredOutputSchema }),
     execution: { taskSupport: config.execution?.taskSupport ?? 'forbidden' },
     parse(input: unknown): Result<unknown> {
       const parsed = config.inputSchema.safeParse(input);

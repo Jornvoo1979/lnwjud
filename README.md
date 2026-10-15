@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Cross-platform local AI-agent runtime and MCP gateway</strong><br />
-  <em>286 total tool definitions for local files, Git, processes, Windows automation, WSL, browser control, durable goal continuation, Engineering Harness, native Goal automation, context capsules, indexing, observability, Office semantic automation, ECC integration, and extensibility; 274 are advertised by default and all 286 when Codex delegation plus Agent Swarm is enabled.</em>
+  <em>294 total tool definitions for local files, Git, processes, Windows automation, WSL, browser control, durable goal continuation, Engineering Harness, native Goal automation, context capsules, indexing, observability, Office semantic automation, ECC integration, and extensibility; 282 are advertised by default and all 294 when Codex delegation plus Agent Swarm is enabled.</em>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D4" />
   <img alt="Node" src="https://img.shields.io/badge/Node.js-24.x-339933" />
-  <img alt="MCP" src="https://img.shields.io/badge/MCP-286%20tools-6f42c1" />
+  <img alt="MCP" src="https://img.shields.io/badge/MCP-294%20tools-6f42c1" />
 </p>
 
 <h2 align="center">Download lnwjud</h2>
@@ -53,13 +53,25 @@
 
 ## Current published version: v5.8.6
 
-## Current source version: v5.8.6
+## Current source version: v5.8.7
+
+### What's new in v5.8.7
+
+- **Tunnel Reset All Settings / persistent alias (candidate):** Reconcile only the verified stopped `lnwjud` local runtime alias before factory reset, preserving profile, health and logs around the official `tunnel-client runtimes rm` operation. Refuse running, foreign or unverifiable Tunnel ownership; never delete remote tunnels or unrelated aliases. Reset is accepted only after the native alias is verified absent. Crash-interruption and full release gates remain under validation.
+- **External MCP direct invocation:** Fix direct `mcp_call` results from content-only child servers by omitting the outer mandatory structured-output schema. Playwright, Context7 and codebase-memory-mcp were tested through the newly installed v5.8.7 development runtime; direct responses now succeed without falsifying `structuredContent`.
+
+
+- **Issue #208 — guarded Git import:** Added a five-field, exact-commit HTTPS import contract, native Windows create-only staging and no-replace publication, NTFS identity checks and fail-closed ambiguous-state recovery. Release security acceptance and independent review remain pending.
+- **Issue #209 — write safety:** Added strict create-only handling, workspace writer leases and path preflight with global managed-writer admission; cross-root native lifecycle acceptance remains pending.
+- **MCP connector identity and diagnostics:** Preserve a host-supplied exact app mention without assuming one universal plugin name; retain direct-vs-batch child results and distinguish host-approval-adapter denial from unavailable approval. A host rejection before dispatch is outside the connector and is not bypassed.
+- **Scheduled Task truthfulness:** Show the difference between an enabled native hourly task and a verified continuation claim. The previous native task was disabled by the user; no duplicate or hidden worker was created.
+- **ภาษาไทย:** เพิ่ม Git import ที่ระบุ Commit ตรงและตรวจ Native Identity, ป้องกันการเขียนทับและจัดการ Writer Lease, รักษา Connector ID ตามที่ ChatGPT ส่งมาจริง พร้อมแสดงการปฏิเสธสิทธิ์อย่างตรงไปตรงมา ทั้งหมดเป็น Candidate สำหรับทดสอบในเครื่องก่อน Security Review และ Official Release ไม่ได้ทำให้ Scheduled Task ทำงานต่อเนื่องระหว่างรอบ
 
 ### What's new in v5.8.6
 
 - **Engineering Gate checkpoint compatibility (Issue #198):** Add `checkpoint_goal_engineering` with the same strict schema, Goal handler, lease/revision checks and evidence validation as `checkpoint_goal`. It follows the canonical tool's availability, so disabling `checkpoint_goal` disables both names.
-- **Verification boundary:** The connected `@lnwjud-pc` plugin is running app v5.8.5. Its direct `checkpoint_goal` schema exposes both Engineering fields; a call with non-empty values and `get_goal` readback confirmed persistence. Fresh-session v5.8.6 inventory and alias call/readback remain post-install acceptance.
-- **ภาษาไทย:** `@lnwjud-pc` ที่เชื่อมต่ออยู่ใช้แอป v5.8.5; schema ของ `checkpoint_goal` ประกาศฟิลด์ Engineering ทั้งสองรายการ และเรียกด้วยค่าจริงพร้อมอ่านกลับผ่าน `get_goal` ได้แล้ว ส่วน inventory และการเรียก alias ใน fresh session หลังติดตั้ง v5.8.6 ยังเป็น acceptance ที่รออยู่
+- **Connector verification:** After the v5.8.6 update, a fresh connector session advertised both checkpoint tools with the Engineering fields. Direct calls to both names and `get_goal` readback confirmed persistence. Connector display names are chosen by each user.
+- **ภาษาไทย:** หลังอัปเดตเป็น v5.8.6 ตรวจใน connector session ใหม่แล้วพบเครื่องมือ checkpoint ทั้งสองชื่อพร้อมฟิลด์ Engineering และเรียกโดยตรงพร้อมอ่านข้อมูลที่บันทึกผ่าน `get_goal` ได้ ชื่อที่แสดงของ connector ขึ้นอยู่กับการตั้งค่าของผู้ใช้แต่ละคน
 
 ### What's new in v5.8.5
 
@@ -68,7 +80,7 @@
 - **Modern MCP HTTP inventory and schema evidence:** Notify subscribed clients when host tool availability changes, then serve the current tools/list on the next request. `tool_describe` reports a SHA-256 digest from the active ToolRegistry schema and identifies remote connector schema as unavailable.
 - **ภาษาไทย:** แยก Full Audit และการตรวจประวัติ deployment/release แบบอ่านอย่างเดียวออกจากคำสั่งปล่อยงาน, reconcile metadata ของ Goal เดิมจาก snapshot ที่ acquire ภายใต้ lease, แจ้ง MCP client เมื่อ tool availability เปลี่ยน และแสดง digest ของ local schema โดยไม่อ้างว่าอ่าน schema ของ connector ภายนอกได้
 
-### What's new in v5.8.4
+#### Earlier highlights — v5.8.4
 
 - **Durable MCP Shell results (Issue #193):** Preserve exact client/session/workspace ownership when a modern HTTP request or legacy MCP transport is replaced. Authorized owners can retrieve retained task status, stdout/stderr and terminal receipts; foreign owners remain denied.
 - **Checked workflows and recovery:** Execute reviewed recipe steps only when requested, evaluate each step under current permissions and Goal leases, and distinguish unavailable provider evidence from completed work. Workspace indexing and context reporting retain explicit error/completeness states.
@@ -147,7 +159,7 @@ For the Thai setup and workflow guide, see [docs/USAGE_TH.md](docs/USAGE_TH.md#8
 
 ## What can lnwjud do?
 
-lnwjud exposes **286 tool definitions** through one local runtime and MCP gateway. The default advertised set is 274; all 286 are available when Codex delegation plus Agent Swarm is enabled.
+lnwjud exposes **294 tool definitions** through one local runtime and MCP gateway. The default advertised set is 282; all 294 are available when Codex delegation plus Agent Swarm is enabled.
 
 | Area | Examples |
 | --- | --- |

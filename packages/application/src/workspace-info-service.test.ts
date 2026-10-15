@@ -1,8 +1,9 @@
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rename, rm, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WorkspaceInfoService } from './workspace-info-service.js';
+import { preflightWorkspacePath } from './workspace-path-preflight.js';
 import { WorkspaceService, type Workspace, type WorkspaceRepository } from '@lnwjud/workspace';
 
 const temporaryRoots: string[] = [];
@@ -12,6 +13,34 @@ afterEach(async () => {
 });
 
 describe('WorkspaceInfoService.register', () => {
+  it('revalidates after an advisory preflight and rejects a directory changed into a symlink', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-registration-race-'));
+    temporaryRoots.push(root);
+    const target = path.join(root, 'project');
+    const moved = path.join(root, 'moved');
+    await mkdir(target);
+    const probe = await preflightWorkspacePath(target, true);
+    expect(probe).toMatchObject({ ok: true, value: { exists: true, kind: 'directory' } });
+    await rename(target, moved);
+    try {
+      await symlink(moved, target, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (error: unknown) {
+      if (process.platform === 'win32' && (error as NodeJS.ErrnoException).code === 'EPERM') return;
+      throw error;
+    }
+    const store = new Map<string, Workspace>();
+    const repository: WorkspaceRepository = {
+      async list() { return [...store.values()]; },
+      async get(id) { return store.get(id) ?? null; },
+      async insert(workspace) { store.set(workspace.id, workspace); },
+      async delete(id) { store.delete(id); },
+    };
+    const service = new WorkspaceInfoService(repository, new WorkspaceService(repository));
+    const registered = await service.register({ clientId: 'race', clientName: 'race' }, { path: target });
+    expect(registered).toMatchObject({ ok: false });
+    expect(store.size).toBe(0);
+  });
+
   it('registers an explicit absolute project without an automatically generated machine root', async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-register-direct-'));
     temporaryRoots.push(projectRoot);

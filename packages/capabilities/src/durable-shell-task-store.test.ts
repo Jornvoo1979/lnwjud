@@ -24,6 +24,98 @@ afterEach(async () => {
 });
 
 describe('durable shell background tasks', () => {
+  it('isolates repository import child environment without changing ordinary shell behavior', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-env-'));
+    temporaryRoots.push(root);
+    const store = new DurableShellTaskStore(path.join(root, '.tasks'));
+    const owner = { clientId: 'env-owner', sessionId: 'env-session', workspaceId: 'env-workspace' };
+    const key = 'LNWJUD_IMPORT_CANARY_SECRET';
+    const previous = process.env[key];
+    process.env[key] = 'should-not-leak-to-repository-import';
+    try {
+      for (const kind of ['repository_import', 'opaque'] as const) {
+        const id = kind === 'repository_import' ? 'isolated-import' : 'ordinary-shell';
+        const launched = await store.launch({
+          mutationKind: kind, taskId: id, executable: process.execPath,
+          arguments: ['-e', 'process.stdout.write(process.env.LNWJUD_IMPORT_CANARY_SECRET ? "leaked" : "isolated")'],
+          cwd: root, timeoutSeconds: 15, maxOutputBytes: 256,
+          includeStdout: true, includeStderr: false, owner,
+        });
+        expect(launched.ok).toBe(true);
+        await expect.poll(async () => {
+          const observation = await store.snapshot(id);
+          return observation.ok ? observation.value.state : 'unknown';
+        }, { timeout: 12000 }).toBe('completed');
+        const evidence = await store.snapshotForGoalEvidence(id, owner.workspaceId);
+        expect(evidence).toMatchObject({
+          ok: true, value: { stdout: kind === 'repository_import' ? 'isolated' : 'leaked' },
+        });
+      }
+    } finally {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  }, 30000);
+
+  it('holds an import-exclusive reservation through real contained worker lifetime', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-worker-lifetime-'));
+    temporaryRoots.push(root);
+    const state = path.join(root, '.tasks');
+    const first = new DurableShellTaskStore(state);
+    const second = new DurableShellTaskStore(state);
+    const importRequest = {
+      taskId: 'secure-import', mutationKind: 'repository_import' as const,
+      executable: process.execPath, arguments: ['-e', 'setTimeout(() => {}, 2500)'],
+      cwd: root, timeoutSeconds: 12, maxOutputBytes: 1024, includeStdout: false, includeStderr: false,
+      owner: { clientId: 'owner', sessionId: 'session', workspaceId: 'workspace-1' },
+    };
+    const launched = await first.launch(importRequest);
+    expect(launched.ok).toBe(true);
+    const conflicting = await second.launch({
+      ...importRequest, taskId: 'opaque-worker', mutationKind: 'opaque',
+      owner: { clientId: 'other-owner', sessionId: 'other-session', workspaceId: 'workspace-2' },
+    });
+    expect(conflicting).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    await expect.poll(async () => {
+      const status = await first.snapshot('secure-import');
+      return status.ok ? status.value.state : 'unknown';
+    }, { timeout: 12000 }).toBe('completed');
+    const after = await second.launch({
+      ...importRequest, taskId: 'after', mutationKind: 'opaque',
+      arguments: ['-e', 'process.exit(0)'],
+    });
+    expect(after.ok).toBe(true);
+    await expect.poll(async () => {
+      const status = await second.snapshot('after');
+      return status.ok ? status.value.state : 'unknown';
+    }, { timeout: 12000 }).toBe('completed');
+  }, 30000);
+
+  it.skipIf(process.platform !== 'win32')('keeps durable ownership until detached descendants finish and persists native zero-active proof', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-contained-'));
+    temporaryRoots.push(root);
+    const state = path.join(root, '.tasks');
+    const store = new DurableShellTaskStore(state);
+    const marker = path.join(root, 'finished.txt');
+    const childScript = path.join(root, 'child.cjs');
+    await writeFile(childScript, [
+      "const {spawn}=require('node:child_process');",
+      "spawn(process.execPath,['-e',\"setTimeout(()=>require('node:fs').writeFileSync(process.argv[1],'done'),1500)\",process.argv[2]],{detached:true,stdio:'ignore'}).unref();",
+    ].join('\n'));
+    const result = await store.launch({
+      taskId: 'contained', executable: process.execPath, arguments: [childScript, marker], cwd: root,
+      timeoutSeconds: 15, maxOutputBytes: 1024, includeStdout: true, includeStderr: true,
+      owner: { clientId: 'a', sessionId: 'a', workspaceId: 'a' },
+    });
+    expect(result.ok).toBe(true);
+    await expect.poll(async () => {
+      const status = await store.snapshot('contained');
+      return status.ok ? status.value.state : 'unknown';
+    }, { timeout: 10000 }).toBe('completed');
+    expect(await readFile(marker, 'utf8').catch(() => 'not finished')).toBe('done');
+    expect(JSON.parse(await readFile(path.join(state, 'contained', 'containment.receipt.json'), 'utf8'))).toMatchObject({ kind: 'windows_job_v1', activeProcesses: 0 });
+  }, 15000);
+
   it('keeps liveness output-free but returns bounded terminal CI proof only to its workspace', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-evidence-proof-'));
     temporaryRoots.push(root);
@@ -277,7 +369,7 @@ describe('durable shell background tasks', () => {
     });
   }, 15_000);
 
-  it('finalizes when the command exits even if a detached descendant keeps inherited stdio open', async () => {
+  it('retains Windows containment until a detached descendant closes inherited stdio', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-shell-'));
     temporaryRoots.push(root);
     const backend = new ShellCapabilityBackend({
@@ -287,7 +379,7 @@ describe('durable shell background tasks', () => {
     const script = [
       "const { spawn } = require('node:child_process');",
       "const os = require('node:os');",
-      "const grandchild = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], {",
+      "const grandchild = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 2200)'], {",
       "cwd: os.tmpdir(), detached: true, stdio: ['ignore', process.stdout, process.stderr] });",
       "grandchild.unref();",
       "process.stdout.write('parent-done');",
@@ -307,7 +399,11 @@ describe('durable shell background tasks', () => {
     const taskId = String((started.value as Record<string, unknown>).task_id);
 
     try {
-      const terminal = await backend.execute({ operation: 'wait', task_id: taskId, timeout_seconds: 5 });
+      const beforeDescendantExit = await backend.execute({ operation: 'wait', task_id: taskId, timeout_seconds: 0.25 });
+      if (process.platform === 'win32') {
+        expect(beforeDescendantExit).toMatchObject({ ok: true, value: { state: 'running', durable: true } });
+      }
+      const terminal = await backend.execute({ operation: 'wait', task_id: taskId, timeout_seconds: 6 });
       expect(terminal).toMatchObject({
         ok: true,
         value: { state: 'completed', exit_code: 0, stdout: 'parent-done', durable: true },

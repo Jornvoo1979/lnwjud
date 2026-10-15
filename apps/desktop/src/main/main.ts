@@ -96,6 +96,7 @@ import { createExplicitKeySecretProtector, DEFAULT_DISPLAY_TIME_ZONE, DEFAULT_MC
 import { applyPendingSqliteRestoreSync, CheckpointKeyStore, type CheckpointPayloadCipher } from '@lnwjud/storage';
 import { createDesktopRuntime, formatCompleteTargetDetail, formatIncompleteLegacyHistory, writeSerializedLogRows, type DesktopRuntime } from './desktop-services.js';
 import { resolveTunnelProfileDirectory, TUNNEL_SECRET_FILE_NAME } from './tunnel-controller.js';
+import { TunnelAliasRetirementJournal, tunnelAliasRecoveryDirectory } from './tunnel-runtime-alias-journal.js';
 import { migrateLegacyWindowsSecrets } from './legacy-secret-migration.js';
 import { installPdfProvider } from './pdf-provider-installer.js';
 import { DesktopShutdownCoordinator } from './desktop-shutdown.js';
@@ -1741,6 +1742,10 @@ async function requestFactoryReset(dataPath: string): Promise<{ readonly accepte
   });
   if (confirmation.response !== 0) return { accepted: false };
 
+  // Do not claim reset accepted until the owned native runtime alias is gone.
+  // runtimes rm removes its local profile and health/log files, too.
+  if (desktopRuntime === null) throw new Error('Desktop runtime is unavailable for verified Tunnel reset');
+  await desktopRuntime.prepareFactoryReset();
   stageFactoryResetSync(dataPath);
   factoryResetQueued = true;
   setTimeout(() => {
@@ -2553,6 +2558,11 @@ function configureRuntimeDiagnosticsHistory(dataPath: string, runtime: DesktopRu
 }
 
 async function createNativeDesktopRuntime(dataPath: string): Promise<DesktopRuntime> {
+  // Recover exact local profile artifacts from an interrupted alias removal
+  // before reading any secrets or starting Tunnel lifecycle operations.
+  await new TunnelAliasRetirementJournal(
+    tunnelAliasRecoveryDirectory(dataPath), resolveTunnelProfileDirectory(),
+  ).recover();
   recordDesktopStartup('runtime-secrets:begin');
   const secrets = await resolveDesktopRuntimeSecrets(dataPath);
   recordDesktopStartup('runtime-secrets:end');

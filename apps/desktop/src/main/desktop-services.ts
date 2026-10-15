@@ -17,6 +17,7 @@ import {
   FileService,
   EngineeringPreparationService,
   GitService,
+  RepositoryImportService,
   GoalContinuationService,
   WorkflowTemplateService,
   WorkflowStartService,
@@ -39,6 +40,7 @@ import {
   type FileActor,
   type DoctorProbeResult,
 } from '@lnwjud/application';
+import { SharedManagedWriterAdmission, SqliteWorkspaceWriterLease, SecureRepositoryImportRuntime } from '@lnwjud/capabilities';
 import { AuditService, decodeActivityTargetReference, type ActivityAuditEvent, type ActivityTargetDetail, type AuditEventRepository, type AuditEventSummaryProjection } from '@lnwjud/audit';
 import { CodexDiscovery, formatCodexDiscoveryError } from '@lnwjud/codex';
 import type { GoalRecord, Result } from '@lnwjud/domain';
@@ -278,6 +280,7 @@ export interface DesktopRuntime {
   autoStartWatcher(): Promise<string | null>;
   autoStartTunnel(): Promise<TunnelStatus | null>;
   autoStartRemoteMcp(): Promise<RemoteMcpStatus>;
+  prepareFactoryReset(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -498,7 +501,8 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     console.error(`Automatic database backup failed: ${error instanceof Error ? error.message : 'unknown error'}`);
   });
   const workspaceService = new WorkspaceService(workspaceRepository);
-  const gitService = new GitService(workspaceRepository);
+  const writerAdmission = new SharedManagedWriterAdmission(path.join(dataPath, 'background-tasks'));
+  const gitService = new GitService(workspaceRepository, undefined, undefined, { writerAdmission, nativeContainmentRoot: path.join(dataPath, 'native-managed-git') });
   const codexDiscovery = new CodexDiscovery();
   const executableResolver = new PathExecutableResolver();
   const storedProfile = settingsRepository.get(permissionSettingKey);
@@ -520,7 +524,10 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     globalSettingsProvider: (): EngineeringHarnessSettings => parseEngineeringHarnessSettings(settingsRepository.get(USER_SETTING_KEYS.engineeringHarnessSettings)).settings,
     workspaceOverrideProvider: (workspaceId): EngineeringHarnessWorkspaceOverride | undefined => parseEngineeringHarnessWorkspaceOverrides(settingsRepository.get(USER_SETTING_KEYS.engineeringHarnessWorkspaceOverrides))[workspaceId],
   });
+  const workspaceWriterLease = new SqliteWorkspaceWriterLease(path.join(dataPath, 'workspace-writer-leases.sqlite'), Date.now, writerAdmission);
   const processService = new ProcessService(workspaceRepository, {
+    writerAdmission,
+    nativeContainmentRoot: path.join(dataPath, 'native-managed-processes'),
     projectService,
     profileProvider: activePermissionProfile,
     defaultTimeoutMsProvider: (): number => readSettings().processTimeoutMs,
@@ -534,6 +541,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
   const recoveryTrashRoot = path.join(dataPath, 'recovery-trash');
   const pathGuard = new WorkspacePathGuard(new SecretPolicy(), { unrestricted, trustedWorkspaceAccess: true });
   const fileService = new FileService(workspaceRepository, pathGuard, undefined, {
+    writerAdmission,
     checkpointService,
     profileProvider: activePermissionProfile,
     unrestricted,
@@ -752,6 +760,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     debugSessions,
     extensions: extensionsService,
     workspaceInfo: workspaceInfoService,
+    workspaceWriterLease,
     workspaceQuery: workspaceQueryService,
     projectSnapshot: projectSnapshotService,
     project: projectService,
@@ -771,6 +780,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     search: searchService,
     workspaceIndex,
     git: gitService,
+    repositoryImport: new RepositoryImportService(workspaceRepository, new SecureRepositoryImportRuntime(dataPath)),
     process: processService,
     codex: codexService,
     agentSwarm: agentSwarmService,
@@ -2268,6 +2278,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     activityTracker,
     logHub,
     toolAvailabilityService,
+    prepareFactoryReset: (): Promise<void> => tunnelController.prepareFactoryReset(),
     getLocale: (): UiLocale => readLocale(settingsRepository),
     getUserSettings: (): UserSettings => readSettings(),
     getDestructivePolicy: (): DestructiveAutoApprovalPolicy => destructivePolicyProvider(),

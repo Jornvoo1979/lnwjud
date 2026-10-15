@@ -10,6 +10,7 @@ import {
   FileService,
   EngineeringPreparationService,
   GitService,
+  RepositoryImportService,
   GoalContinuationService,
   WorkflowTemplateService,
   WorkflowStartService,
@@ -34,6 +35,9 @@ import {
 import { AuditService, decodeActivityTargetReference } from '@lnwjud/audit';
 import {
   createPlatformCapabilitySet,
+  SharedManagedWriterAdmission,
+  SqliteWorkspaceWriterLease,
+  SecureRepositoryImportRuntime,
   type LocalCapabilityService,
   type PlatformWindowsCapabilityOptions,
   type ShellCapabilityBackend,
@@ -151,7 +155,11 @@ export function createStdioMcpRuntime(
     globalSettingsProvider: (): EngineeringHarnessSettings => parseEngineeringHarnessSettings(settingsRepository.get(USER_SETTING_KEYS.engineeringHarnessSettings)).settings,
     workspaceOverrideProvider: (workspaceId): EngineeringHarnessWorkspaceOverride | undefined => parseEngineeringHarnessWorkspaceOverrides(settingsRepository.get(USER_SETTING_KEYS.engineeringHarnessWorkspaceOverrides))[workspaceId],
   });
+  const writerAdmission = new SharedManagedWriterAdmission(path.join(dataPath, 'background-tasks'));
+  const workspaceWriterLease = new SqliteWorkspaceWriterLease(path.join(dataPath, 'workspace-writer-leases.sqlite'), Date.now, writerAdmission);
   const processService = new ProcessService(workspaceRepository, {
+    writerAdmission,
+    nativeContainmentRoot: path.join(dataPath, 'native-managed-processes'),
     projectService,
     profileProvider,
     defaultTimeoutMsProvider: (): number => parseIntegerSetting(settingsRepository.get(USER_SETTING_KEYS.processTimeoutMs), DEFAULT_PROCESS_TIMEOUT_MS, 1_000, 4 * 60 * 60_000),
@@ -164,6 +172,7 @@ export function createStdioMcpRuntime(
   });
   const pathGuard = new WorkspacePathGuard(new SecretPolicy(), { unrestricted: effectiveUnrestricted, trustedWorkspaceAccess: !strictRoots });
   const fileService = new FileService(workspaceRepository, pathGuard, undefined, {
+    writerAdmission,
     checkpointService,
     profileProvider,
     unrestricted: effectiveUnrestricted,
@@ -173,7 +182,7 @@ export function createStdioMcpRuntime(
     recoverableDelete: (): boolean => destructivePolicyProvider().recoverableDelete,
     recoveryTrashRoot: path.join(dataPath, 'recovery-trash'),
   });
-  const gitService = new GitService(workspaceRepository);
+  const gitService = new GitService(workspaceRepository, undefined, undefined, { writerAdmission, nativeContainmentRoot: path.join(dataPath, 'native-managed-git') });
   const workspaceQuery = new WorkspaceQueryService(workspaceRepository, pathGuard);
   const extensions = createLocalExtensionsService({
     settingsJson: settingsRepository.get(EXTENSIONS_SETTINGS_KEY),
@@ -283,6 +292,7 @@ export function createStdioMcpRuntime(
     debugSessions,
     extensions,
     workspaceInfo: new WorkspaceInfoService(workspaceRepository, workspaceService, effectiveUnrestricted),
+    workspaceWriterLease,
     workspaceQuery,
     projectSnapshot: new ProjectSnapshotService(workspaceRepository, {
       projectService,
@@ -307,6 +317,7 @@ export function createStdioMcpRuntime(
     search: new SearchService(workspaceRepository),
     workspaceIndex,
     git: gitService,
+    repositoryImport: new RepositoryImportService(workspaceRepository, new SecureRepositoryImportRuntime(dataPath)),
     process: processService,
     codex: codexService,
     agentSwarm: agentSwarmService,
