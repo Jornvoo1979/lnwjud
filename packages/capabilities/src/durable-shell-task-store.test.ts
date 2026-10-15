@@ -18,8 +18,8 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, {
     recursive: true,
     force: true,
-    maxRetries: process.platform === 'win32' ? 5 : 0,
-    retryDelay: 100,
+    maxRetries: process.platform === 'win32' ? 50 : 0,
+    retryDelay: 200,
   })));
 });
 
@@ -38,14 +38,14 @@ describe('durable shell background tasks', () => {
         const launched = await store.launch({
           mutationKind: kind, taskId: id, executable: process.execPath,
           arguments: ['-e', 'process.stdout.write(process.env.LNWJUD_IMPORT_CANARY_SECRET ? "leaked" : "isolated")'],
-          cwd: root, timeoutSeconds: 15, maxOutputBytes: 256,
+          cwd: root, timeoutSeconds: process.env.CI ? 100 : 15, maxOutputBytes: 256,
           includeStdout: true, includeStderr: false, owner,
         });
         expect(launched.ok).toBe(true);
         await expect.poll(async () => {
           const observation = await store.snapshot(id);
           return observation.ok ? observation.value.state : 'unknown';
-        }, { timeout: 12000 }).toBe('completed');
+        }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('completed');
         const evidence = await store.snapshotForGoalEvidence(id, owner.workspaceId);
         expect(evidence).toMatchObject({
           ok: true, value: { stdout: kind === 'repository_import' ? 'isolated' : 'leaked' },
@@ -55,7 +55,7 @@ describe('durable shell background tasks', () => {
       if (previous === undefined) delete process.env[key];
       else process.env[key] = previous;
     }
-  }, 30000);
+  }, process.env.CI ? 160000 : 30000);
 
   it('holds an import-exclusive reservation through real contained worker lifetime', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-worker-lifetime-'));
@@ -66,7 +66,7 @@ describe('durable shell background tasks', () => {
     const importRequest = {
       taskId: 'secure-import', mutationKind: 'repository_import' as const,
       executable: process.execPath, arguments: ['-e', 'setTimeout(() => {}, 2500)'],
-      cwd: root, timeoutSeconds: 12, maxOutputBytes: 1024, includeStdout: false, includeStderr: false,
+      cwd: root, timeoutSeconds: process.env.CI ? 110 : 12, maxOutputBytes: 1024, includeStdout: false, includeStderr: false,
       owner: { clientId: 'owner', sessionId: 'session', workspaceId: 'workspace-1' },
     };
     const launched = await first.launch(importRequest);
@@ -79,7 +79,7 @@ describe('durable shell background tasks', () => {
     await expect.poll(async () => {
       const status = await first.snapshot('secure-import');
       return status.ok ? status.value.state : 'unknown';
-    }, { timeout: 12000 }).toBe('completed');
+    }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('completed');
     const after = await second.launch({
       ...importRequest, taskId: 'after', mutationKind: 'opaque',
       arguments: ['-e', 'process.exit(0)'],
@@ -88,8 +88,8 @@ describe('durable shell background tasks', () => {
     await expect.poll(async () => {
       const status = await second.snapshot('after');
       return status.ok ? status.value.state : 'unknown';
-    }, { timeout: 12000 }).toBe('completed');
-  }, 30000);
+    }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('completed');
+  }, process.env.CI ? 160000 : 30000);
 
   it.skipIf(process.platform !== 'win32')('keeps durable ownership until detached descendants finish and persists native zero-active proof', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-contained-'));

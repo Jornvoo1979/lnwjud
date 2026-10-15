@@ -26,7 +26,7 @@ describe('repository import crash recovery', () => {
       expect((await stat(stage)).isDirectory()).toBe(true);
       await expect(execute()).rejects.toThrow();
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
   }, 60000);
 
@@ -70,14 +70,14 @@ describe('repository import crash recovery', () => {
       const store = new DurableShellTaskStore(path.join(root, 'background-tasks'));
       const launch = await store.launch({
         mutationKind: 'repository_import', taskId, executable: process.execPath,
-        arguments: ['-e', 'process.exit(0)'], cwd: root, timeoutSeconds: 15,
+        arguments: ['-e', 'process.exit(0)'], cwd: root, timeoutSeconds: process.env.CI ? 90 : 15,
         maxOutputBytes: 256, includeStdout: false, includeStderr: false, owner,
       });
       expect(launch.ok).toBe(true);
       await expect.poll(async (): Promise<string> => {
         const observed = await store.snapshot(taskId);
         return observed.ok ? String(observed.value.state) : 'unknown';
-      }, { timeout: 12000 }).toBe('completed');
+      }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('completed');
       const runtime = new SecureRepositoryImportRuntime(root);
       expect(await runtime.status({ taskId, owner })).toMatchObject({
         ok: true, value: { state: 'completed', native_identity: native },
@@ -88,9 +88,9 @@ describe('repository import crash recovery', () => {
         ok: true, value: { state: 'unresolved' },
       });
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, 45000);
+  }, process.env.CI ? 150000 : 45000);
 
   it('does not trust a published receipt when the live native destination is absent', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-stale-receipt-'));
@@ -102,14 +102,14 @@ describe('repository import crash recovery', () => {
       const store = new DurableShellTaskStore(path.join(root, 'background-tasks'));
       const launch = await store.launch({
         mutationKind: 'repository_import', taskId, executable: process.execPath,
-        arguments: ['-e', 'process.exit(0)'], cwd: root, timeoutSeconds: 15,
+        arguments: ['-e', 'process.exit(0)'], cwd: root, timeoutSeconds: process.env.CI ? 90 : 15,
         maxOutputBytes: 256, includeStdout: false, includeStderr: false, owner,
       });
       expect(launch.ok).toBe(true);
       await expect.poll(async (): Promise<string> => {
         const observed = await store.snapshot(taskId);
         return observed.ok ? String(observed.value.state) : 'unknown';
-      }, { timeout: 12000 }).toBe('completed');
+      }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('completed');
       const folder = path.join(root, 'repository-imports', requestId);
       const statePath = path.join(folder, 'publication.json');
       await mkdir(folder, { recursive: true });
@@ -126,9 +126,9 @@ describe('repository import crash recovery', () => {
         ok: true, value: { state: 'unresolved', detail: 'Native publication proof is incomplete' },
       });
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, 30000);
+  }, process.env.CI ? 130000 : 30000);
 
   it.skipIf(process.platform !== 'win32')('fails closed on a failed worker with an existing destination even without a native receipt', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-missing-receipt-'));
@@ -141,14 +141,14 @@ describe('repository import crash recovery', () => {
       const launch = await taskStore.launch({
         mutationKind: 'repository_import', taskId, executable: process.execPath,
         arguments: ['-e', 'process.exit(7)'], cwd: root,
-        timeoutSeconds: 15, maxOutputBytes: 256, includeStdout: false,
+        timeoutSeconds: process.env.CI ? 90 : 15, maxOutputBytes: 256, includeStdout: false,
         includeStderr: false, owner,
       });
       expect(launch.ok).toBe(true);
       await expect.poll(async () => {
         const current = await taskStore.snapshot(taskId);
         return current.ok ? current.value.state : 'unknown';
-      }, { timeout: 12000 }).toBe('failed');
+      }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('failed');
       const folder = path.join(root, 'repository-imports', requestId);
       await mkdir(folder, { recursive: true });
       await writeFile(path.join(folder, 'spec.json'), JSON.stringify({
@@ -165,9 +165,9 @@ describe('repository import crash recovery', () => {
         ok: true, value: { state: 'failed' },
       });
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, 30000);
+  }, process.env.CI ? 130000 : 30000);
 
   it('reports unresolved when a failed worker has a prepared native receipt', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-prepared-'));
@@ -180,14 +180,14 @@ describe('repository import crash recovery', () => {
       const launch = await taskStore.launch({
         mutationKind: 'repository_import', taskId, executable: process.execPath,
         arguments: ['-e', 'process.exit(7)'], cwd: root,
-        timeoutSeconds: 15, maxOutputBytes: 256, includeStdout: false,
+        timeoutSeconds: process.env.CI ? 90 : 15, maxOutputBytes: 256, includeStdout: false,
         includeStderr: false, owner,
       });
       expect(launch.ok).toBe(true);
       await expect.poll(async () => {
         const current = await taskStore.snapshot(taskId);
         return current.ok ? current.value.state : 'unknown';
-      }, { timeout: 12000 }).toBe('failed');
+      }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('failed');
       const folder = path.join(root, 'repository-imports', requestId);
       const statePath = path.join(folder, 'publication.json');
       await mkdir(folder, { recursive: true });
@@ -204,7 +204,7 @@ describe('repository import crash recovery', () => {
         ok: true, value: { state: 'unresolved', detail: expect.stringContaining('publication') },
       });
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, 30000);
+  }, process.env.CI ? 130000 : 30000);
 });

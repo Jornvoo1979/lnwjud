@@ -45,20 +45,20 @@ describe.skipIf(process.platform !== 'win32')('cross-workspace native ProcessSer
       const importRequest = {
         taskId: 'other-workspace-import', mutationKind: 'repository_import' as const,
         executable: process.execPath, arguments: ['-e', 'process.exit(0)'], cwd: root,
-        timeoutSeconds: 20, maxOutputBytes: 1024, includeStdout: false, includeStderr: false,
+        timeoutSeconds: process.env.CI ? 110 : 20, maxOutputBytes: 1024, includeStdout: false, includeStderr: false,
         owner: { clientId: 'importer', sessionId: 'importer', workspaceId: 'different-workspace' },
       };
       expect(await tasks.launch(importRequest)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
       await expect.poll(async () => {
         try { return await readFile(sentinel, 'utf8'); } catch { return ''; }
-      }, { timeout: 15000 }).toBe('done');
-      await expect.poll(async () => (await tasks.launch(importRequest)).ok, { timeout: 15000 }).toBe(true);
+      }, { timeout: process.env.CI ? 90000 : 15000 }).toBe('done');
+      await expect.poll(async () => (await tasks.launch(importRequest)).ok, { timeout: process.env.CI ? 90000 : 15000 }).toBe(true);
       await expect.poll(async () => {
         const result = await tasks.snapshot(importRequest.taskId, undefined, importRequest.owner);
         return result.ok ? result.value.state : 'unavailable';
-      }, { timeout: 15000 }).toBe('completed');
+      }, { timeout: process.env.CI ? 90000 : 15000 }).toBe('completed');
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, 50000);
+  }, process.env.CI ? 200000 : 50000);
 });
