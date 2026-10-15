@@ -14,7 +14,9 @@ afterEach(async () => {
 
 describe('WorkspaceInfoService.register', () => {
   it('revalidates after an advisory preflight and rejects a directory changed into a symlink', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-registration-race-'));
+    // macOS /var is a symlink to /private/var; isolate the intentional target
+    // symlink regression from a symlink in the OS-provided temp path.
+    const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-registration-race-')));
     temporaryRoots.push(root);
     const target = path.join(root, 'project');
     const moved = path.join(root, 'moved');
@@ -42,7 +44,7 @@ describe('WorkspaceInfoService.register', () => {
   });
 
   it('registers an explicit absolute project without an automatically generated machine root', async () => {
-    const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-register-direct-'));
+    const projectRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-register-direct-')));
     temporaryRoots.push(projectRoot);
     const projectRealRoot = await realpath(projectRoot);
 

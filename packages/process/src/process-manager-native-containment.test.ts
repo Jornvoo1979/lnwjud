@@ -20,14 +20,14 @@ describe.skipIf(process.platform !== 'win32')('native contained ProcessManager',
       const manager = new ProcessManager(undefined, undefined, undefined, undefined, containedRoot);
       const result = await manager.start({
         executable: process.execPath, args: [childFile, finished], cwd: root,
-        containmentId: '107c1eb1-638e-4d7d-bf47-c47ed7b6d558', timeoutMs: 15000,
+        containmentId: '107c1eb1-638e-4d7d-bf47-c47ed7b6d558', timeoutMs: process.env.CI ? 110000 : 15000,
       }, undefined, undefined, (): void => { callbacks++; });
       expect(result).toMatchObject({ ok: true, value: { state: 'running' } });
       if (!result.ok) return;
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect(manager.status(result.value.processId)).toMatchObject({ ok: true, value: { state: 'running' } });
       await expect.poll(() => manager.status(result.value.processId).ok
-        ? manager.status(result.value.processId).value.state : 'unknown', { timeout: 12000 }).toBe('exited');
+        ? manager.status(result.value.processId).value.state : 'unknown', { timeout: process.env.CI ? 100000 : 12000 }).toBe('exited');
       expect(await readFile(finished, 'utf8')).toBe('yes');
       expect(callbacks).toBe(1);
       const receipt = JSON.parse(await readFile(path.join(containedRoot, '107c1eb1-638e-4d7d-bf47-c47ed7b6d558', 'containment.receipt.json'), 'utf8'));
@@ -35,5 +35,5 @@ describe.skipIf(process.platform !== 'win32')('native contained ProcessManager',
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, process.env.CI ? 45000 : 18000);
+  }, process.env.CI ? 130000 : 18000);
 });

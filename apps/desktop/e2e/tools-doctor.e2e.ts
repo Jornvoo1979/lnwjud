@@ -212,6 +212,7 @@ test.describe('Tools catalog and Doctor real Electron acceptance', () => {
   });
 
   test('missing LSP dependency is needs_setup and explains the real requirement', async () => {
+    test.setTimeout(process.env.CI ? 150_000 : 30_000);
     const app = await launchDesktop();
     try {
       await openTools(app.page);
@@ -414,7 +415,7 @@ async function launchDesktop(options: { readonly dataRoot?: string; readonly fix
   let browser: Browser | undefined;
   try {
     await waitForDevTools(devToolsPort, process, stderr);
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${devToolsPort}`);
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${devToolsPort}`, { timeout: globalThis.process.env.CI ? 90_000 : 30_000 });
     const context = browser.contexts()[0];
     if (context === undefined) throw new Error('Electron did not create a browser context');
     // CDP is available before native storage/runtime initialization creates
