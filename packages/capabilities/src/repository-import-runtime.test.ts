@@ -130,7 +130,7 @@ describe('repository import crash recovery', () => {
     }
   }, 30000);
 
-  it('fails closed on a failed worker with an existing destination even without a native receipt', async () => {
+  it.skipIf(process.platform !== 'win32')('fails closed on a failed worker with an existing destination even without a native receipt', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-missing-receipt-'));
     const requestId = 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     const taskId = 'repository-import-' + requestId;

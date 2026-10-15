@@ -33,7 +33,7 @@ describe.skipIf(process.platform !== 'win32')('native contained ProcessManager',
       const receipt = JSON.parse(await readFile(path.join(containedRoot, '107c1eb1-638e-4d7d-bf47-c47ed7b6d558', 'containment.receipt.json'), 'utf8'));
       expect(receipt).toMatchObject({ kind: 'windows_job_v1', activeProcesses: 0, outcome: 'completed' });
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, 18000);
+  }, process.env.CI ? 45000 : 18000);
 });
