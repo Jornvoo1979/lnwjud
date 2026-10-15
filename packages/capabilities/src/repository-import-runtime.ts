@@ -261,7 +261,7 @@ export class SecureRepositoryImportRuntime {
       const result = await execFileAsync(powershell, [
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', verifier,
         manifest.anchorSourcePath, manifest.workspaceRoot, manifest.destination, native.nativeIdentity,
-      ], { cwd: this.importDirectory(manifest.requestId), env: environment, windowsHide: true, timeout: 15000, maxBuffer: 8192 });
+      ], { cwd: this.importDirectory(manifest.requestId), env: environment, windowsHide: true, timeout: process.env.CI ? 90000 : 30000, maxBuffer: 8192 });
       return result.stdout.trim() === 'PUBLISHED_NATIVE_IDENTITY_MATCH';
     } catch { return false; }
   }

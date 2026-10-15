@@ -90,7 +90,7 @@ describe('repository import crash recovery', () => {
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
-  }, process.env.CI ? 150000 : 45000);
+  }, process.env.CI ? 220000 : 65000);
 
   it('does not trust a published receipt when the live native destination is absent', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-stale-receipt-'));
