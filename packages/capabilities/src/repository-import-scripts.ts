@@ -73,7 +73,16 @@ $spec=Get-Content -LiteralPath $SpecPath -Raw | ConvertFrom-Json
 Add-Type -Path ([string]$spec.anchorSourcePath)
 $anchor=[RepositoryImportAnchor]::new([string]$spec.workspaceRoot,[string]$spec.destination)
 try {
- $identity=$anchor.PrepareStage([string]$spec.stagePath)
+ # Git cannot chdir into a directory while its no-delete-share native pin is held.
+ # Check checkout content before opening the stage handle, then pin and reverify native identity.
+ $git=Join-Path (Join-Path $env:SystemDrive 'Program Files\Git\cmd') 'git.exe'
+ if(-not [IO.File]::Exists($git)){throw 'IMPORT_TRUSTED_GIT_UNAVAILABLE'}
+ $stage=[string]$spec.stagePath
+ $head=& $git -c core.fsmonitor=false -C $stage rev-parse --verify HEAD 2>$null
+ if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($head) -or $head.Trim().ToLowerInvariant() -cne ([string]$spec.commit).ToLowerInvariant()){throw 'IMPORT_STAGE_HEAD_CHANGED'}
+ $changes=& $git -c core.fsmonitor=false -C $stage status --porcelain=v1 --untracked-files=all 2>$null
+ if($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($changes -join [Environment]::NewLine))){throw 'IMPORT_STAGE_WORKTREE_CHANGED'}
+ $identity=$anchor.PrepareStage($stage)
  # A path-only checkout is not ownership proof: the publisher must still hold
  # the exact native stage object that was identified before Git started.
  if($identity -cne $ExpectedStageIdentity){throw 'IMPORT_STAGE_IDENTITY_CHANGED'}

@@ -10,6 +10,13 @@ import { repositoryImportPublishScript, repositoryImportStageIdentityScript } fr
 
 const execFileAsync = promisify(execFile);
 
+async function commitStage(stage: string): Promise<string> {
+  await execFileAsync('git', ['init', '-q', stage]);
+  await execFileAsync('git', ['-C', stage, 'add', '--', 'proof.txt']);
+  await execFileAsync('git', ['-C', stage, '-c', 'user.name=lnwjud-test', '-c', 'user.email=lnwjud-test@example.invalid', 'commit', '-qm', 'stage fixture']);
+  return (await execFileAsync('git', ['-C', stage, 'rev-parse', 'HEAD'])).stdout.trim().toLowerCase();
+}
+
 describe.skipIf(process.platform !== 'win32')('Windows repository import native anchor', () => {
   it('publishes without replacement and refuses junction ancestry on the real filesystem', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud import anchor '));
@@ -87,6 +94,7 @@ describe.skipIf(process.platform !== 'win32')('Windows repository import native 
       await mkdir(workspace);
       await mkdir(stage);
       await writeFile(path.join(stage, 'proof.txt'), 'verified stage');
+      const commit = await commitStage(stage);
       await writeFile(anchorSource, windowsRepositoryImportAnchorSource);
       await writeFile(identityScript, repositoryImportStageIdentityScript);
       await writeFile(publisherScript, repositoryImportPublishScript);
@@ -102,7 +110,7 @@ describe.skipIf(process.platform !== 'win32')('Windows repository import native 
         stagePath: stage,
         destination: 'published',
         statePath,
-        commit: 'a'.repeat(40),
+        commit,
       }));
       const result = await execFileAsync('powershell.exe', [
         '-NoProfile', '-NonInteractive', '-File', publisherScript, specPath, identity,
@@ -116,6 +124,49 @@ describe.skipIf(process.platform !== 'win32')('Windows repository import native 
       await rm(root, { recursive: true, force: true });
     }
   }, 45000);
+
+  it('refuses modified tracked content and extra untracked content before native publication', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stage-content-'));
+    const workspace = path.join(root, 'workspace');
+    const stage = path.join(root, 'stage');
+    const anchorSource = path.join(root, 'anchor.cs');
+    const identityScript = path.join(root, 'identity.ps1');
+    const publisherScript = path.join(root, 'publisher.ps1');
+    try {
+      await mkdir(workspace);
+      await mkdir(stage);
+      const proofPath = path.join(stage, 'proof.txt');
+      await writeFile(proofPath, 'original checked-out content');
+      const commit = await commitStage(stage);
+      await writeFile(anchorSource, windowsRepositoryImportAnchorSource);
+      await writeFile(identityScript, repositoryImportStageIdentityScript);
+      await writeFile(publisherScript, repositoryImportPublishScript);
+      const identity = (await execFileAsync('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-File', identityScript, anchorSource, workspace, 'published', stage,
+      ], { windowsHide: true, timeout: 30000 })).stdout.trim();
+      const specPath = path.join(root, 'spec.json');
+      await writeFile(specPath, JSON.stringify({
+        anchorSourcePath: anchorSource, workspaceRoot: workspace,
+        stagePath: stage, destination: 'published',
+        statePath: path.join(root, 'publication.json'), commit,
+      }));
+      const publish = (): ReturnType<typeof execFileAsync> => execFileAsync('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-File', publisherScript, specPath, identity,
+      ], { windowsHide: true, timeout: 30000 });
+      await writeFile(proofPath, 'modified in place');
+      await expect(publish()).rejects.toMatchObject({
+        stderr: expect.stringContaining('IMPORT_STAGE_WORKTREE_CHANGED'),
+      });
+      await writeFile(proofPath, 'original checked-out content');
+      await writeFile(path.join(stage, 'unexpected.txt'), 'injected');
+      await expect(publish()).rejects.toMatchObject({
+        stderr: expect.stringContaining('IMPORT_STAGE_WORKTREE_CHANGED'),
+      });
+      expect(await readdir(workspace)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60000);
 
   it('refuses a stage swapped after the pre-clone NTFS identity was captured', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stage-identity-'));
@@ -137,7 +188,8 @@ describe.skipIf(process.platform !== 'win32')('Windows repository import native 
       expect(expectedIdentity).toMatch(/^[0-9A-F]{16}-[0-9A-F]{32}$/);
       await rename(stage, path.join(root, 'original-stage'));
       await mkdir(stage);
-      await writeFile(path.join(stage, 'attacker.txt'), 'wrong directory');
+      await writeFile(path.join(stage, 'proof.txt'), 'wrong directory');
+      const commit = await commitStage(stage);
       const specPath = path.join(root, 'spec.json');
       await writeFile(specPath, JSON.stringify({
         anchorSourcePath: anchorSource,
@@ -145,7 +197,7 @@ describe.skipIf(process.platform !== 'win32')('Windows repository import native 
         stagePath: stage,
         destination: 'published',
         statePath: path.join(root, 'publication.json'),
-        commit: 'a'.repeat(40),
+        commit,
       }));
       await expect(execFileAsync('powershell.exe', [
         '-NoProfile', '-NonInteractive', '-File', publisherScript, specPath, expectedIdentity,
