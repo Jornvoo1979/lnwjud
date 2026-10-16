@@ -1,8 +1,8 @@
 {
   "name": "@lnwjud/desktop",
-  "version": "5.8.6",
+  "version": "5.8.7",
   "private": true,
-  "description": "Cross-platform local AI-agent runtime and MCP gateway with 286 total tool definitions.",
+  "description": "Cross-platform local AI-agent runtime and MCP gateway with 294 total tool definitions.",
   "author": "Adisorn",
   "homepage": "https://github.com/engasnm111/lnwjud#readme",
   "repository": {

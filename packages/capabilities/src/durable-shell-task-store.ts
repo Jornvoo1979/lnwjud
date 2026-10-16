@@ -2,11 +2,13 @@ import { execFile, spawn } from 'node:child_process';
 import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { prepareWindowsContainedLaunch, readWindowsContainmentReceipt } from '@lnwjud/process';
 import { promisify } from 'node:util';
 import { appError, err, ok, type GoalTaskCancellationObservation, type Result } from '@lnwjud/domain';
 import {
   DurableShellTaskIndex,
   type ActiveTaskInspection,
+  type DurableMutationKind,
   type DurableTaskLaunchRecord,
 } from './durable-shell-task-index.js';
 import { capabilityTaskOwnerMatches, legacyCapabilityTaskOwner, type CapabilityTaskOwner } from './task-ownership.js';
@@ -14,6 +16,8 @@ import { capabilityTaskOwnerMatches, legacyCapabilityTaskOwner, type CapabilityT
 export type DurableShellTaskState = 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled' | 'termination_unverified';
 
 export interface DurableShellLaunchRequest {
+  /** Trusted internal classification; never taken from generic shell inputs. */
+  readonly mutationKind?: DurableMutationKind;
   readonly taskId: string;
   readonly commandFingerprint?: string;
   readonly executable: string;
@@ -28,6 +32,7 @@ export interface DurableShellLaunchRequest {
 }
 
 interface DurableTaskMetadata {
+  readonly containment?: 'windows_job_v1';
   readonly version: 1;
   readonly task_id: string;
   readonly command_fingerprint?: string;
@@ -53,6 +58,7 @@ interface DurableTaskMetadata {
 }
 
 interface DurableWorkerSpec {
+  readonly containment?: { readonly receiptPath: string; readonly cancelPath: string };
   readonly version: 1;
   readonly taskId: string;
   readonly executable: string;
@@ -91,6 +97,15 @@ const PROCESS_IDENTITY_PROBE_TIMEOUT_MS = 5_000;
 // turn normal short-lived tasks into false `termination_unverified` results.
 const PROCESS_IDENTITY_CAPTURE_GRACE_MS = 10_000;
 const execFileAsync = promisify(execFile);
+
+function repositoryImportBootstrapEnvironment(): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {};
+  for (const name of ['SystemRoot', 'windir', 'PATH', 'PATHEXT', 'ComSpec', 'TEMP', 'TMP', 'SystemDrive', 'PROCESSOR_ARCHITECTURE']) {
+    const value = process.env[name];
+    if (typeof value === 'string') result[name] = value;
+  }
+  return result;
+}
 
 export interface DurableShellTaskStoreOptions {
   readonly maxConcurrentTasks?: number;
@@ -143,6 +158,7 @@ export class DurableShellTaskStore {
 
     const startedAt = new Date().toISOString();
     const reservation = await this.activeIndex.reserve({
+      mutationKind: request.mutationKind ?? 'opaque',
       taskId: request.taskId,
       requestDigest,
       ownerClientId: request.owner.clientId,
@@ -175,6 +191,7 @@ export class DurableShellTaskStore {
     const stderrPath = path.join(taskDirectory, STDERR_FILENAME);
     const specPath = path.join(taskDirectory, SPEC_FILENAME);
     const metadata: DurableTaskMetadata = {
+      ...(this.platform === 'win32' ? { containment: 'windows_job_v1' as const } : {}),
       version: 1,
       task_id: request.taskId,
       ...(request.commandFingerprint === undefined ? {} : { command_fingerprint: request.commandFingerprint }),
@@ -211,8 +228,17 @@ export class DurableShellTaskStore {
     try {
       await mkdir(taskDirectory, { recursive: true });
       await mkdir(this.rootDirectory, { recursive: true });
+      const contained = this.platform === 'win32' ? await prepareWindowsContainedLaunch({
+        directory: taskDirectory, executable: request.executable, args: request.arguments, cwd: request.cwd, timeoutMs: request.timeoutSeconds * 1000,
+        windowsVerbatimArguments: request.windowsVerbatimArguments === true,
+      }) : undefined;
+      const workerSpec: DurableWorkerSpec = contained === undefined ? spec : {
+        ...spec, executable: contained.executable, arguments: contained.args,
+        windowsVerbatimArguments: false,
+        containment: { receiptPath: contained.receiptPath, cancelPath: contained.cancelPath },
+      };
       await writeFile(metadataPath, JSON.stringify(metadata), 'utf8');
-      await writeFile(specPath, JSON.stringify(spec), 'utf8');
+      await writeFile(specPath, JSON.stringify(workerSpec), 'utf8');
       const workerPath = await this.ensureWorkerScript();
       const worker = spawn(process.execPath, [workerPath, specPath], {
         // The durable worker only coordinates the real child process; it does not need
@@ -223,7 +249,9 @@ export class DurableShellTaskStore {
         stdio: 'ignore',
         shell: false,
         windowsHide: true,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        env: request.mutationKind === 'repository_import'
+          ? { ...repositoryImportBootstrapEnvironment(), ELECTRON_RUN_AS_NODE: '1' }
+          : { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       });
       await waitForSpawn(worker);
       if (worker.pid === undefined) throw new Error('Durable task worker did not return a process ID');
@@ -436,6 +464,16 @@ export class DurableShellTaskStore {
       await this.releaseTerminalReservation(metadata);
       return ok(await this.snapshotFromMetadata(metadata));
     }
+    if (metadata.containment === 'windows_job_v1') {
+      await writeFile(path.join(this.taskDirectory(taskId), 'containment.cancel'), 'cancel', { mode: 0o600 });
+      const deadline = Date.now() + 12_000;
+      while (Date.now() < deadline) {
+        const latest = await this.readMetadata(taskId);
+        if (latest.ok && isTerminal(latest.value.state)) return this.snapshot(taskId, undefined, owner);
+        await delay(100);
+      }
+      return ok(await this.snapshotFromMetadata({ ...metadata, state: 'termination_unverified', error: 'Native containment cancellation has no verified terminal receipt' }));
+    }
     metadata = await this.hydrateProcessIdentities(metadata);
     const workerProbe = metadata.worker_pid === undefined
       ? { state: 'gone' as const }
@@ -483,6 +521,11 @@ export class DurableShellTaskStore {
 
   public async has(taskId: string): Promise<boolean> {
     return (await this.readMetadata(taskId)).ok;
+  }
+
+  /** Shared writer admission inspects durable shell liveness without acquiring the index lock again. */
+  public async inspectForWriterAdmission(taskId: string): Promise<ActiveTaskInspection> {
+    return this.inspectTaskForIndex(taskId);
   }
 
   private async inspectTaskForIndex(taskId: string): Promise<ActiveTaskInspection> {
@@ -586,6 +629,20 @@ export class DurableShellTaskStore {
     const finalized = await this.awaitTerminalMetadata(current.task_id);
     if (finalized !== undefined) return finalized;
 
+    if (current.containment === 'windows_job_v1') {
+      const receipt = await readWindowsContainmentReceipt(path.join(this.taskDirectory(current.task_id), 'containment.receipt.json'));
+      current.state = receipt === undefined ? 'termination_unverified' : receipt.outcome === 'completed' ? (receipt.exitCode === 0 ? 'completed' : 'failed') : receipt.outcome;
+      if (receipt === undefined) {
+        current.error = 'Native containment termination could not be verified';
+        delete current.finished_at;
+      } else {
+        current.exit_code = receipt.exitCode;
+        current.finished_at = new Date().toISOString();
+        delete current.error;
+      }
+      await this.writeMetadata(current);
+      return current;
+    }
     current.state = 'failed';
     current.exit_code = current.exit_code ?? -1;
     current.error = current.error ?? 'Durable task worker exited before recording a final state';
@@ -1138,6 +1195,16 @@ async function processStartedAt(pid) {
 }
 
 async function stopTree(pid) {
+  if (spec.containment) {
+    await writeFile(spec.containment.cancelPath, 'cancel');
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const receipt = await containmentReceipt();
+      if (receipt) return true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  }
   if (!processRunning(pid)) return true;
   if (!metadata.child_started_at || await processStartedAt(pid) !== metadata.child_started_at) return false;
   if (process.platform === 'win32') {
@@ -1172,8 +1239,23 @@ async function stopTree(pid) {
   return !processRunning(pid);
 }
 
+async function containmentReceipt() {
+  if (!spec.containment) return undefined;
+  try {
+    const receipt = JSON.parse(await readFile(spec.containment.receiptPath, 'utf8'));
+    return receipt.kind === 'windows_job_v1' && receipt.activeProcesses === 0 && Number.isInteger(receipt.exitCode)
+      && ['completed', 'cancelled', 'timed_out'].includes(receipt.outcome) ? receipt : undefined;
+  } catch { return undefined; }
+}
+
 async function finish(state, exitCode, error) {
   if (settled) return;
+  settled = true;
+  if (spec.containment && child && state !== 'termination_unverified') {
+    const receipt = await containmentReceipt();
+    if (!receipt) { state = 'termination_unverified'; error = 'Native containment has no verified terminal receipt'; }
+    else { state = receipt.outcome === 'completed' ? (receipt.exitCode === 0 ? 'completed' : 'failed') : receipt.outcome; exitCode = receipt.exitCode; }
+  }
   settled = true;
   if (timer) clearTimeout(timer);
   metadata.state = state;

@@ -21,6 +21,29 @@ export interface ReleaseNote {
 
 const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '5.8.7',
+    categories: [
+      {
+        id: 'safety',
+        titleKey: 'whatsNew.category.safety',
+        items: [
+          { id: 'safe-git-import', titleKey: 'whatsNew.587.import.title', descriptionKey: 'whatsNew.587.import.description', badge: 'new', tags: ['Git', 'HTTPS', 'NTFS', 'exact SHA'] },
+          { id: 'workspace-writer-safety', titleKey: 'whatsNew.587.writers.title', descriptionKey: 'whatsNew.587.writers.description', badge: 'improved', tags: ['write safety', 'lease', 'preflight'] },
+        ],
+      },
+      {
+        id: 'experience',
+        titleKey: 'whatsNew.category.experience',
+        items: [
+          { id: 'mcp-connector-identity', titleKey: 'whatsNew.587.connector.title', descriptionKey: 'whatsNew.587.connector.description', badge: 'fixed', tags: ['MCP', 'host approval', 'connector'] },
+          { id: 'scheduled-continuation-truth', titleKey: 'whatsNew.587.scheduled.title', descriptionKey: 'whatsNew.587.scheduled.description', badge: 'improved', tags: ['Scheduled Tasks', 'Goal', 'watcher'] },
+          { id: 'direct-mcp-passthrough', titleKey: 'whatsNew.587.mcpDirect.title', descriptionKey: 'whatsNew.587.mcpDirect.description', badge: 'fixed', tags: ['MCP', 'Playwright', 'Context7', 'structured output'] },
+          { id: 'tunnel-reset-alias', titleKey: 'whatsNew.587.tunnelReset.title', descriptionKey: 'whatsNew.587.tunnelReset.description', badge: 'fixed', tags: ['Tunnel', 'Reset All Settings', 'runtime alias', 'ownership'] },
+        ],
+      },
+    ],
+  },
+  {
     version: '5.8.6',
     categories: [
       {

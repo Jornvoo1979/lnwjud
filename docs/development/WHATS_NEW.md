@@ -26,7 +26,20 @@ Before packaging a new public version:
 
 `scripts/set-version.mjs` synchronizes version surfaces but intentionally does **not** invent release notes. The release-note entry is a reviewed product artifact.
 
-## Current source v5.8.5 release-note coverage
+## Current source v5.8.7 candidate release-note coverage
+
+The offline `5.8.7` registry entry provides localized Thai and English notes for the combined candidate:
+
+- Issue #208: guarded HTTPS Git import pinned to an exact commit, with Windows NTFS publication proof and fail-closed recovery;
+- Issue #209: strict create-only mutations, workspace writer leases, exact-target path preflight and explicit same-client idle-session recovery after a 60-second grace period;
+- Process startup writer-admission fix: rejected pre-spawn launches release their reservation; spawned children still require verified zero-active native termination before release;
+- exact host-supplied MCP connector identity, direct child MCP response passthrough, and explicit host permission-denial diagnostics;
+- truthful Scheduled Task/Goal continuation status without claiming an active timer is a continuous background worker;
+- safe Reset All Settings and local Tunnel alias reconciliation without deleting remote tunnels or foreign profiles.
+
+These are source/installed QA candidate notes, **not** evidence that all security verification, protected merge, exact-main-SHA CI, official packages, or publication has passed. The owner authorized a solo-developer review process; no external review is claimed. The latest public release remains v5.8.6 until the release gates complete.
+
+## Historical v5.8.5 release-note coverage
 
 The `5.8.5` entry provides localized Thai and English notes for:
 

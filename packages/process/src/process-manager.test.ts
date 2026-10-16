@@ -1,6 +1,6 @@
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ok } from '@lnwjud/domain';
 import { PathExecutableResolver, ProcessManager, type ExecutableResolver, type ProcessTreeTerminator } from './index.js';
 
@@ -91,14 +91,17 @@ describe('ProcessManager', () => {
     await expect(manager.stop(started.value.processId)).resolves.toMatchObject({ ok: true });
   });
 
-  it('returns EXECUTABLE_NOT_FOUND without accepting an arbitrary shell command', async () => {
+  it('rejects a missing executable and releases its pre-spawn writer reservation', async () => {
+    const onVerifiedTermination = vi.fn();
     const result = await new ProcessManager().start({
       executable: 'lnwjud-executable-that-does-not-exist',
       args: ['&&', 'whoami'],
       cwd: process.cwd(),
-    });
+    }, undefined, undefined, onVerifiedTermination);
 
     expect(result).toMatchObject({ ok: false, error: { code: 'EXECUTABLE_NOT_FOUND' } });
+    // No process was spawned: a managed writer must not be reserved indefinitely.
+    expect(onVerifiedTermination).toHaveBeenCalledTimes(1);
   });
 
   it('runs a Windows command shim without shell true', async () => {

@@ -2,13 +2,28 @@
 
 Release highlights are listed newest first. The [README](README.md) shows the three newest versions, and each [GitHub Release](https://github.com/engasnm111/lnwjud/releases) contains its published notes and downloads.
 
+### What's new in v5.8.7
+
+- **Tunnel Reset All Settings / persistent alias (candidate):** Reconcile only the verified stopped `lnwjud` local runtime alias before factory reset, preserving profile, health and logs around the official `tunnel-client runtimes rm` operation. Refuse running, foreign or unverifiable Tunnel ownership; never delete remote tunnels or unrelated aliases. Reset is accepted only after the native alias is verified absent. Crash-interruption and full release gates remain under validation.
+- **External MCP direct invocation:** Fix direct `mcp_call` results from content-only child servers by omitting the outer mandatory structured-output schema. Playwright, Context7 and codebase-memory-mcp were tested through the newly installed v5.8.7 development runtime; direct responses now succeed without falsifying `structuredContent`.
+
+
+- **Issue #208 — guarded Git import:** Added a five-field, exact-commit HTTPS import contract, native Windows create-only staging and no-replace publication, NTFS identity checks and fail-closed ambiguous-state recovery. Security validation and official release acceptance remain pending; the owner authorized solo-development review.
+- **Native stage worktree validation (candidate):** Before re-pinning the NTFS stage identity for no-replace publication, verify trusted Git HEAD against the requested SHA, reject modified tracked or unexpected untracked files, and refuse Git index flags that conceal changes (`assume-unchanged` / `skip-worktree`). A Windows regression first reproduced publication of a concealed modification and then passed after the fix (5/5). Disposable HTTPS exact-commit and standard-mode MCP import also passed on the prior candidate. Concurrent same-user tamper races and official security/release acceptance remain unverified.
+- **Issue #209 — write safety:** Added strict create-only handling, workspace writer leases and path preflight with global managed-writer admission; cross-root native lifecycle acceptance remains pending.
+- **Issue #209 — stale lease recovery (candidate):** An explicitly confirmed `recoverAbandoned` request from another session of the same client may rotate a writer lease after 60 seconds of inactivity, even before expiry. Generation fencing rejects prior credentials; live or unverifiable in-flight and globally managed writers block recovery. Pre-migration unknown activity remains fail-closed. Focused regression checks pass; official release validation is still pending.
+- **Writer process startup safety (candidate):** If a managed process is rejected before spawning (such as a missing executable, invalid input or failed containment preparation), its writer reservation is released because no child exists. Once a child has spawned, the existing native verified-zero-active termination rule remains mandatory. Regression reproduced before the fix; all 35 process tests and package typecheck pass. This is not a claim that every import security finding is resolved.
+- **MCP connector identity and diagnostics:** Preserve a host-supplied exact app mention without assuming one universal plugin name; retain direct-vs-batch child results and distinguish host-approval-adapter denial from unavailable approval. A host rejection before dispatch is outside the connector and is not bypassed.
+- **Scheduled Task truthfulness:** Show the difference between an enabled native hourly task and a verified continuation claim. The previous native task was disabled by the user; no duplicate or hidden worker was created.
+- **ภาษาไทย:** เพิ่ม Git import ที่ระบุ Commit ตรงและตรวจ Native Identity, ป้องกันการเขียนทับและจัดการ Writer Lease, รักษา Connector ID ตามที่ ChatGPT ส่งมาจริง พร้อมแสดงการปฏิเสธสิทธิ์อย่างตรงไปตรงมา ทั้งหมดเป็น Candidate สำหรับทดสอบในเครื่องก่อนผ่าน Security Validation และ Official Release ไม่ได้ทำให้ Scheduled Task ทำงานต่อเนื่องระหว่างรอบ
+
 ### What's new in v5.8.6
 
 - **Engineering Gate checkpoint compatibility (Issue #198):** Publish `checkpoint_goal_engineering` as a second public MCP name with the same strict input schema and authenticated Goal handler as `checkpoint_goal`. Preserve lease/revision comparison, authorization, host-receipt verification, and required-gate enforcement. Alias availability follows the canonical tool, so a user-disabled `checkpoint_goal` cannot be called through the alias.
 - **Local wire contract:** The in-memory MCP SDK `tools/list` response contains both names with matching schemas; a direct alias call forwards Engineering Gate updates and review findings to the same Goal service. Existing HTTP inventory-change tests verify notification and refresh behavior.
 - **Issue #194:** The read-only audit classification and active Goal reconciliation fixes remain in v5.8.5. This release adds no bypass for required Gates.
-- **Acceptance boundary:** The connected `@lnwjud-pc` plugin is running app v5.8.5. Its direct `checkpoint_goal` schema exposes both Engineering fields; a call with non-empty values and `get_goal` readback confirmed persistence. Fresh-session v5.8.6 inventory refresh and alias call/readback remain post-install acceptance.
-- **ภาษาไทย:** `@lnwjud-pc` ที่เชื่อมต่ออยู่ใช้แอป v5.8.5; schema ของ `checkpoint_goal` ประกาศฟิลด์ Engineering ทั้งสองรายการ และเรียกด้วยค่าจริงพร้อมอ่านกลับผ่าน `get_goal` ได้แล้ว ส่วน inventory และการเรียก alias ใน fresh session หลังติดตั้ง v5.8.6 ยังเป็น acceptance ที่รออยู่
+- **Connector verification:** After the v5.8.6 update, a fresh connector session advertised both checkpoint tools with the Engineering fields. Direct calls to both names and `get_goal` readback confirmed persistence. Connector display names are chosen by each user.
+- **ภาษาไทย:** หลังอัปเดตเป็น v5.8.6 ตรวจใน connector session ใหม่แล้วพบเครื่องมือ checkpoint ทั้งสองชื่อพร้อมฟิลด์ Engineering และเรียกโดยตรงพร้อมอ่านข้อมูลที่บันทึกผ่าน `get_goal` ได้ ชื่อที่แสดงของ connector ขึ้นอยู่กับการตั้งค่าของผู้ใช้แต่ละคน
 
 ### What's new in v5.8.5
 
@@ -182,7 +197,7 @@ v5.6.0 adds the read-only runtime side of **[LNWJUD Watcher](https://github.com/
 v5.5.3 fixes the recurring Native ChatGPT Scheduled Task connector-binding path so a scheduled wake can reliably resolve the same connected lnwjud connector before claiming durable work.
 
 - **Exact connector identity is carried into new recurring tasks:** when the current chat exposes an `@connector` mention, callers can pass it through `prepare_scheduled_continuation.connectorMention` and the generated task prompt is prefixed with that exact identity.
-- **No connector name is assumed:** validation is generic and Unicode-aware rather than tied to `@lnwjud_tunnel_pc` or any other installation-specific name.
+- **No connector name is assumed:** validation is generic and Unicode-aware rather than tied to `@connector` or any other installation-specific name.
 - **Prompt injection surface stays bounded:** connector identities must remain a single validated mention token; whitespace/newline injection is rejected.
 - **Claim-before-mutation remains mandatory:** scheduled wakes still call `claim_scheduled_continuation` before user-visible prose or workspace mutation, and transport resolution failure does not terminalize the durable goal.
 - **Cadence/lease semantics are unchanged:** one hourly recurring host task is still reused, with the normal 600-second worker lease and existing stale-worker recovery rules.
