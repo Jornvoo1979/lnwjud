@@ -57,23 +57,29 @@ export class ProcessManager {
     onCreated?: (process: ManagedProcess) => void,
     onVerifiedNativeTermination?: () => void,
   ): Promise<Result<ManagedProcess>> {
+    // A writer reservation is safe to release only before any child is spawned,
+    // or after a launched child has verified native zero-active termination.
+    const rejectBeforeSpawn = (failure: Result<never>): Result<never> => {
+      onVerifiedNativeTermination?.();
+      return failure;
+    };
     const activeProcesses = this.activeProcessCount();
     if (activeProcesses >= this.maxActiveProcesses) {
-      return err(appError('CONFLICT', `Too many managed processes are already active (${activeProcesses}/${this.maxActiveProcesses}); wait for existing work or stop a process before starting another.`, true));
+      return rejectBeforeSpawn(err(appError('CONFLICT', `Too many managed processes are already active (${activeProcesses}/${this.maxActiveProcesses}); wait for existing work or stop a process before starting another.`, true)));
     }
     const validation = this.validateSpec(spec);
-    if (!validation.ok) return validation;
-    if (isAborted(signal)) return cancelledStart();
+    if (!validation.ok) return rejectBeforeSpawn(validation);
+    if (isAborted(signal)) return rejectBeforeSpawn(cancelledStart());
     const resolvedExecutable = await this.executableResolver.resolve(spec.executable);
-    if (isAborted(signal)) return cancelledStart();
-    if (!resolvedExecutable.ok) return resolvedExecutable;
+    if (isAborted(signal)) return rejectBeforeSpawn(cancelledStart());
+    if (!resolvedExecutable.ok) return rejectBeforeSpawn(resolvedExecutable);
     const invocation = this.invocationFactory.create(resolvedExecutable.value, spec.args);
-    if (!invocation.ok) return invocation;
-    if (isAborted(signal)) return cancelledStart();
+    if (!invocation.ok) return rejectBeforeSpawn(invocation);
+    if (isAborted(signal)) return rejectBeforeSpawn(cancelledStart());
     const processId = spec.containmentId ?? randomUUID();
     if (spec.containmentId !== undefined
       && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(spec.containmentId)) {
-      return err(appError('INVALID_INPUT', 'Native containment identifier is invalid'));
+      return rejectBeforeSpawn(err(appError('INVALID_INPUT', 'Native containment identifier is invalid')));
     }
     let contained: Awaited<ReturnType<typeof prepareWindowsContainedLaunch>> | undefined;
     if (process.platform === 'win32' && this.nativeContainmentRoot !== undefined) {
@@ -88,9 +94,9 @@ export class ProcessManager {
             ? {} : { windowsVerbatimArguments: invocation.value.windowsVerbatimArguments }),
         });
       } catch {
-        return err(appError('INTERNAL_ERROR', 'Native process containment could not be prepared'));
+        return rejectBeforeSpawn(err(appError('INTERNAL_ERROR', 'Native process containment could not be prepared')));
       }
-      if (isAborted(signal)) return cancelledStart();
+      if (isAborted(signal)) return rejectBeforeSpawn(cancelledStart());
     }
     const child = spawn(contained?.executable ?? invocation.value.executable, [...(contained?.args ?? invocation.value.args)], {
       cwd: spec.cwd,

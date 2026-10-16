@@ -32,6 +32,7 @@ The offline `5.8.7` registry entry provides localized Thai and English notes for
 
 - Issue #208: guarded HTTPS Git import pinned to an exact commit, with Windows NTFS publication proof and fail-closed recovery;
 - Issue #209: strict create-only mutations, workspace writer leases, exact-target path preflight and explicit same-client idle-session recovery after a 60-second grace period;
+- Process startup writer-admission fix: rejected pre-spawn launches release their reservation; spawned children still require verified zero-active native termination before release;
 - exact host-supplied MCP connector identity, direct child MCP response passthrough, and explicit host permission-denial diagnostics;
 - truthful Scheduled Task/Goal continuation status without claiming an active timer is a continuous background worker;
 - safe Reset All Settings and local Tunnel alias reconciliation without deleting remote tunnels or foreign profiles.
