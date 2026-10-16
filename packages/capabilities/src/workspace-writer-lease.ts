@@ -40,12 +40,13 @@ interface LeaseRow {
   owner_client_id: string | null;
   owner_session_id: string | null;
   expires_at: number;
+  last_activity_at: number;
 }
 
 interface CallRow { call_id: string; pid: number; generation: number; }
 
 export interface WorkspaceWriterLeasePort {
-  acquire(workspaceId: string, ownerClientId: string, ownerSessionId: string, ttlSeconds: number): Promise<Result<WorkspaceWriterLeaseProof & { expiresAt: string }>>;
+  acquire(workspaceId: string, ownerClientId: string, ownerSessionId: string, ttlSeconds: number, recoverAbandonedSameClient?: boolean): Promise<Result<WorkspaceWriterLeaseProof & { expiresAt: string }>>;
   inspect(workspaceId: string): Promise<Result<WorkspaceWriterLeaseStatus>>;
   begin(workspaceId: string, ownerClientId: string, ownerSessionId: string, callId: string, proof?: WorkspaceWriterLeaseProof): Promise<Result<{ required: boolean; generation: number }>>;
   heartbeat(workspaceId: string, callId: string, generation: number): Promise<void>;
@@ -57,7 +58,7 @@ export interface WorkspaceWriterLeasePort {
 export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
   constructor(private readonly filename: string, private readonly now: () => number = Date.now, private readonly globalExclusion?: WorkspaceWriterGlobalExclusion) {
     mkdirSync(path.dirname(filename), { recursive: true });
-    this.database((db) => {
+    this.transaction((db) => {
       db.exec(`CREATE TABLE IF NOT EXISTS workspace_writer_leases (
         workspace_id TEXT PRIMARY KEY, generation INTEGER NOT NULL, lease_id TEXT,
         token_hash TEXT, owner_client_id TEXT, owner_session_id TEXT,
@@ -66,10 +67,15 @@ export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
         call_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
         generation INTEGER NOT NULL, pid INTEGER NOT NULL
       ); CREATE INDEX IF NOT EXISTS workspace_writer_calls_workspace ON workspace_writer_calls(workspace_id)`);
+      // Existing rows have unknown activity: do not early-recover pre-migration leases.
+      const columns = db.prepare('PRAGMA table_info(workspace_writer_leases)').all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'last_activity_at')) {
+        db.exec('ALTER TABLE workspace_writer_leases ADD COLUMN last_activity_at INTEGER NOT NULL DEFAULT 0');
+      }
     });
   }
 
-  public async acquire(workspaceId: string, clientId: string, sessionId: string, ttlSeconds: number): Promise<Result<WorkspaceWriterLeaseProof & { expiresAt: string }>> {
+  public async acquire(workspaceId: string, clientId: string, sessionId: string, ttlSeconds: number, recoverAbandonedSameClient = false): Promise<Result<WorkspaceWriterLeaseProof & { expiresAt: string }>> {
     if (!validIdentity(workspaceId, clientId, sessionId) || !validTtl(ttlSeconds)) return invalid();
     const globalProbe = this.globalExclusion === undefined ? undefined
       : await this.globalExclusion.holdExclusiveProbe(workspaceId).catch(() => unavailable());
@@ -78,7 +84,15 @@ export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
       return this.transaction((db) => {
         const row = this.row(db, workspaceId);
         const now = this.now();
-        if (row?.lease_id !== null && row?.lease_id !== undefined && row.expires_at > now) return conflict('Workspace writer lease already held by another invocation');
+        if (row?.lease_id !== null && row?.lease_id !== undefined && row.expires_at > now) {
+          // Explicit same-client recovery revokes an idle session. Generation fencing
+          // prevents any previous proof from authorizing later mutations.
+          if (!recoverAbandonedSameClient || row.owner_client_id !== clientId
+            || row.owner_session_id === sessionId || row.last_activity_at <= 0
+            || now - row.last_activity_at < 60_000) {
+            return conflict('Workspace writer lease is active; same-client idle recovery is not eligible');
+          }
+        }
         // Every in-flight writer is journaled, including mutations without an active lease.
         if (!this.clearVerifiedDeadCalls(db, workspaceId)) return conflict('Prior writer invocation is live or its termination cannot be proved');
         const generation = (row?.generation ?? 0) + 1;
@@ -86,11 +100,12 @@ export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
         const leaseToken = randomUUID() + randomUUID();
         const expiry = now + ttlSeconds * 1000;
         db.prepare(`INSERT INTO workspace_writer_leases
-          (workspace_id,generation,lease_id,token_hash,owner_client_id,owner_session_id,expires_at)
-          VALUES(?,?,?,?,?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET
+          (workspace_id,generation,lease_id,token_hash,owner_client_id,owner_session_id,expires_at,last_activity_at)
+          VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET
           generation=excluded.generation,lease_id=excluded.lease_id,token_hash=excluded.token_hash,
-          owner_client_id=excluded.owner_client_id,owner_session_id=excluded.owner_session_id,expires_at=excluded.expires_at`)
-          .run(workspaceId, generation, leaseId, digest(leaseToken), clientId, sessionId, expiry);
+          owner_client_id=excluded.owner_client_id,owner_session_id=excluded.owner_session_id,
+          expires_at=excluded.expires_at,last_activity_at=excluded.last_activity_at`)
+          .run(workspaceId, generation, leaseId, digest(leaseToken), clientId, sessionId, expiry, now);
         return ok({ leaseId, leaseToken, generation, expiresAt: new Date(expiry).toISOString() });
       });
     } catch { return unavailable(); }
@@ -140,6 +155,8 @@ export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
         if (proof === undefined || !matches(row, clientId, sessionId, proof)) return conflict('Workspace writer lease proof is missing, stale or belongs to another session');
         db.prepare('INSERT INTO workspace_writer_calls(call_id,workspace_id,generation,pid) VALUES(?,?,?,?)')
           .run(callId, workspaceId, row.generation, process.pid);
+        db.prepare('UPDATE workspace_writer_leases SET last_activity_at=? WHERE workspace_id=? AND generation=?')
+          .run(this.now(), workspaceId, row.generation);
         return ok({ required: true, generation: row.generation });
       });
     } catch { return unavailable(); }
@@ -150,8 +167,9 @@ export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
       const row = this.row(db, workspaceId);
       const tracked = db.prepare('SELECT call_id FROM workspace_writer_calls WHERE call_id=? AND workspace_id=? AND generation=?').get(callId, workspaceId, generation);
       if (row === undefined || row.generation !== generation || row.lease_id === null || tracked === undefined) throw new Error('stale workspace writer fence');
-      db.prepare('UPDATE workspace_writer_leases SET expires_at=? WHERE workspace_id=? AND generation=?')
-        .run(Math.max(row.expires_at, this.now() + 30_000), workspaceId, generation);
+      const now = this.now();
+      db.prepare('UPDATE workspace_writer_leases SET expires_at=?,last_activity_at=? WHERE workspace_id=? AND generation=?')
+        .run(Math.max(row.expires_at, now + 30_000), now, workspaceId, generation);
     });
   }
 
@@ -159,6 +177,8 @@ export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
     this.transaction((db) => {
       db.prepare('DELETE FROM workspace_writer_calls WHERE call_id=? AND workspace_id=? AND generation=?')
         .run(callId, workspaceId, generation);
+      db.prepare('UPDATE workspace_writer_leases SET last_activity_at=? WHERE workspace_id=? AND generation=?')
+        .run(this.now(), workspaceId, generation);
     });
   }
 
@@ -169,7 +189,8 @@ export class SqliteWorkspaceWriterLease implements WorkspaceWriterLeasePort {
         const row = this.row(db, workspaceId);
         if (row === undefined || !matches(row, clientId, sessionId, proof)) return conflict('Stale or foreign workspace writer lease');
         const expiry = this.now() + ttlSeconds * 1000;
-        db.prepare('UPDATE workspace_writer_leases SET expires_at=? WHERE workspace_id=?').run(expiry, workspaceId);
+        db.prepare('UPDATE workspace_writer_leases SET expires_at=?,last_activity_at=? WHERE workspace_id=?')
+          .run(expiry, this.now(), workspaceId);
         return ok({ expiresAt: new Date(expiry).toISOString() });
       });
     } catch { return unavailable(); }

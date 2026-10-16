@@ -127,6 +127,31 @@ describe('MCP tool registry', () => {
     }
   });
 
+  it('requires explicit confirmation when the same client recovers an idle older MCP session', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'lnwjud-mcp-recover-fence-'));
+    try {
+      let time = 100_000;
+      const lease = new SqliteWorkspaceWriterLease(path.join(root, 'leases.sqlite'), () => time);
+      const first = await lease.acquire('workspace-a', actor.clientId, 'old-session', 600);
+      if (!first.ok) throw new Error('lease setup failed');
+      const registry = new ToolRegistry({ workspaceWriterLease: lease }, actor, {
+        sessionId: 'new-session',
+        profileProvider: (): typeof permissionProfiles.full => permissionProfiles.full,
+        authorizationModeProvider: (): 'full_bypass' => 'full_bypass',
+      });
+      time += 61_000;
+      const input = { workspaceId: 'workspace-a', ttlSeconds: 600, recoverAbandoned: true };
+      expect(await registry.invoke('workspace_writer_lease_acquire', input))
+        .toMatchObject({ isError: true, structuredContent: { error: { code: 'CONFLICT' } } });
+      expect((await registry.invoke('workspace_writer_lease_acquire', { ...input, userConfirmed: true })).isError).not.toBe(true);
+      expect(await lease.inspect('workspace-a')).toMatchObject({ ok: true, value: { generation: 2, state: 'active' } });
+      expect(await lease.begin('workspace-a', actor.clientId, 'old-session', 'stale', first.value))
+        .toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('fences workspace indexing mutations as well as file writes across independent clients', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'lnwjud-writer-lease-index-'));
     try {

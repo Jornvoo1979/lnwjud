@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SqliteWorkspaceWriterLease } from './workspace-writer-lease.js';
 
@@ -83,5 +84,73 @@ describe('durable multi-session workspace writer lease', () => {
     expect(await two.acquire('workspace', 'different', 'session-2', 30)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
     await one.end('workspace', 'running', first.value.generation);
     expect(await two.acquire('workspace', 'different', 'session-2', 30)).toMatchObject({ ok: true });
+  });
+
+  it('does not prematurely recover a pre-migration lease with unknown activity', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-writer-upgrade-'));
+    roots.push(root);
+    const filename = path.join(root, 'existing.sqlite');
+    const db = new DatabaseSync(filename);
+    try {
+      db.exec('CREATE TABLE workspace_writer_leases (workspace_id TEXT PRIMARY KEY, generation INTEGER NOT NULL, lease_id TEXT, token_hash TEXT, owner_client_id TEXT, owner_session_id TEXT, expires_at INTEGER NOT NULL DEFAULT 0)');
+      db.prepare('INSERT INTO workspace_writer_leases VALUES (?,?,?,?,?,?,?)')
+        .run('workspace', 12, 'old-lease', 'old-digest', 'owner', 'prior', 500_000);
+    } finally {
+      db.close();
+    }
+    const lease = new SqliteWorkspaceWriterLease(filename, () => 100_000);
+    expect(await lease.inspect('workspace')).toMatchObject({ ok: true, value: { state: 'active', generation: 12 } });
+    expect(await lease.acquire('workspace', 'owner', 'new-session', 600, true))
+      .toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+  });
+
+  it('recovers an idle same-client session after grace and revokes stale proof', async () => {
+    let time = 100_000;
+    const { one, two } = await fixture(() => time);
+    const first = await one.acquire('workspace', 'owner', 'old-session', 600);
+    if (!first.ok) throw new Error('unexpected lease failure');
+    expect(await two.acquire('workspace', 'owner', 'new-session', 600, true)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    time += 61_000;
+    expect(await two.acquire('workspace', 'other-owner', 'new-session', 600, true)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(await two.acquire('workspace', 'owner', 'new-session', 600)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(await two.acquire('workspace', 'owner', 'old-session', 600, true)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    const second = await two.acquire('workspace', 'owner', 'new-session', 600, true);
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.generation).toBe(first.value.generation + 1);
+    expect(await one.begin('workspace', 'owner', 'old-session', 'stale', first.value)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(await one.release('workspace', 'owner', 'old-session', first.value)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(await two.begin('workspace', 'owner', 'new-session', 'new-call', second.value)).toMatchObject({ ok: true });
+    await two.end('workspace', 'new-call', second.value.generation);
+  });
+
+  it('blocks an active writer and waits another grace interval after it finishes', async () => {
+    let time = 100_000;
+    const { one, two } = await fixture(() => time);
+    const owned = await one.acquire('workspace', 'owner', 'old-session', 600);
+    if (!owned.ok) throw new Error('lease not acquired');
+    expect(await one.begin('workspace', 'owner', 'old-session', 'active-call', owned.value)).toMatchObject({ ok: true });
+    time += 61_000;
+    expect(await two.acquire('workspace', 'owner', 'new-session', 600, true)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    await one.end('workspace', 'active-call', owned.value.generation);
+    expect(await two.acquire('workspace', 'owner', 'new-session', 600, true)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    time += 61_000;
+    expect(await two.acquire('workspace', 'owner', 'new-session', 600, true)).toMatchObject({ ok: true, value: { generation: 2 } });
+  });
+
+  it('only grants one recovery when two same-client sessions race', async () => {
+    let time = 100_000;
+    const { one, two } = await fixture(() => time);
+    const original = await one.acquire('workspace', 'owner', 'initial-session', 600);
+    if (!original.ok) throw new Error('lease not acquired');
+    time += 61_000;
+    const result = await Promise.all([
+      one.acquire('workspace', 'owner', 'next-a', 600, true),
+      two.acquire('workspace', 'owner', 'next-b', 600, true),
+    ]);
+    expect(result.filter((entry) => entry.ok)).toHaveLength(1);
+    expect(result.filter((entry) => !entry.ok)).toHaveLength(1);
+    expect(result.find((entry) => entry.ok)).toMatchObject({ ok: true, value: { generation: 2 } });
+    expect(result.find((entry) => !entry.ok)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
   });
 });

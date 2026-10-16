@@ -126,7 +126,7 @@ export const workspaceWriterLeaseProofSchema = z.object({
   leaseToken: z.string().min(1).max(256),
   generation: z.number().int().nonnegative(),
 });
-export const workspaceWriterLeaseAcquireSchema = z.object({ workspaceId: workspaceIdSchema, ttlSeconds: z.number().int().min(30).max(3600).optional() }).strict();
+export const workspaceWriterLeaseAcquireSchema = z.object({ workspaceId: workspaceIdSchema, ttlSeconds: z.number().int().min(30).max(3600).optional(), recoverAbandoned: z.boolean().optional(), userConfirmed: z.boolean().optional() }).strict();
 export const workspaceWriterLeaseStatusSchema = z.object({ workspaceId: workspaceIdSchema }).strict();
 export const workspaceWriterLeaseProofActionSchema = z.object({ workspaceId: workspaceIdSchema, writerLease: workspaceWriterLeaseProofSchema, ttlSeconds: z.number().int().min(30).max(3600).optional() }).strict();
 export const workspacePathPreflightSchema = z.object({ path: pathSchema, userConfirmed: z.boolean().optional() }).strict();

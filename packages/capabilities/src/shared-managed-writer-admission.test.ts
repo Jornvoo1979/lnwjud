@@ -34,6 +34,26 @@ describe('global managed writer admission', () => {
     }
   }, 20000);
 
+  it('refuses same-client idle recovery until the global managed writer is released', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-recover-managed-writer-'));
+    try {
+      let time = 100_000;
+      const gate = new SharedManagedWriterAdmission(path.join(root, 'background-tasks'));
+      const lease = new SqliteWorkspaceWriterLease(path.join(root, 'leases.sqlite'), () => time, gate);
+      expect(await lease.acquire('workspace', 'owner', 'old-session', 600)).toMatchObject({ ok: true });
+      const blocker = await gate.enter({ actorClientId: 'separate-client', workspaceId: 'other-workspace', kind: 'synchronous_mutation' });
+      if (!blocker.ok) throw new Error('global writer not admitted');
+      time += 61_000;
+      expect(await lease.acquire('workspace', 'owner', 'new-session', 600, true))
+        .toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+      await blocker.value.releaseAfterVerifiedTermination();
+      expect(await lease.acquire('workspace', 'owner', 'new-session', 600, true))
+        .toMatchObject({ ok: true, value: { generation: 2 } });
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+    }
+  });
+
   it('excludes repository import against even a different workspace synchronous file writer', async () => {
     const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-global-admission-')));
     try {

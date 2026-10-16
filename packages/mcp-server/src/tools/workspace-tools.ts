@@ -43,11 +43,12 @@ export function workspaceTools(context: McpToolContext): McpToolDefinition[] {
     }),
     defineTool({
       name: 'workspace_writer_lease_acquire',
-      description: 'Acquire a durable exclusive writer lease for one registered workspace. Returns a secret token and monotonic fencing generation. A live lease blocks unrelated MCP mutation callers even under Full Bypass.',
+      description: 'Acquire a durable exclusive writer lease for one registered workspace. Explicit recoverAbandoned with user confirmation may fence an idle previous session of the same client after 60 seconds; unrelated clients and active/unknown writers remain blocked.',
       permission: 'WRITE', annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: workspaceWriterLeaseAcquireSchema,
       handler: async (input) => context.services.workspaceWriterLease === undefined ? missingService()
-        : context.services.workspaceWriterLease.acquire(input.workspaceId, context.actor.clientId, context.actor.sessionId ?? context.actor.clientId, input.ttlSeconds ?? 600),
+        : context.services.workspaceWriterLease.acquire(input.workspaceId, context.actor.clientId, context.actor.sessionId ?? context.actor.clientId, input.ttlSeconds ?? 600,
+          input.recoverAbandoned === true && input.userConfirmed === true),
     }),
     defineTool({
       name: 'workspace_writer_lease_status',

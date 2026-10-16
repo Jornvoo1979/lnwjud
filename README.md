@@ -61,11 +61,12 @@
 - **External MCP direct invocation:** Fix direct `mcp_call` results from content-only child servers by omitting the outer mandatory structured-output schema. Playwright, Context7 and codebase-memory-mcp were tested through the newly installed v5.8.7 development runtime; direct responses now succeed without falsifying `structuredContent`.
 
 
-- **Issue #208 — guarded Git import:** Added a five-field, exact-commit HTTPS import contract, native Windows create-only staging and no-replace publication, NTFS identity checks and fail-closed ambiguous-state recovery. Release security acceptance and independent review remain pending.
+- **Issue #208 — guarded Git import:** Added a five-field, exact-commit HTTPS import contract, native Windows create-only staging and no-replace publication, NTFS identity checks and fail-closed ambiguous-state recovery. Security validation and official release acceptance remain pending; the owner authorized solo-development review.
 - **Issue #209 — write safety:** Added strict create-only handling, workspace writer leases and path preflight with global managed-writer admission; cross-root native lifecycle acceptance remains pending.
+- **Issue #209 — stale lease recovery (candidate):** An explicitly confirmed `recoverAbandoned` request from another session of the same client may rotate a writer lease after 60 seconds of inactivity, even before expiry. Generation fencing rejects prior credentials; live or unverifiable in-flight and globally managed writers block recovery. Pre-migration unknown activity remains fail-closed. Focused regression checks pass; official release validation is still pending.
 - **MCP connector identity and diagnostics:** Preserve a host-supplied exact app mention without assuming one universal plugin name; retain direct-vs-batch child results and distinguish host-approval-adapter denial from unavailable approval. A host rejection before dispatch is outside the connector and is not bypassed.
 - **Scheduled Task truthfulness:** Show the difference between an enabled native hourly task and a verified continuation claim. The previous native task was disabled by the user; no duplicate or hidden worker was created.
-- **ภาษาไทย:** เพิ่ม Git import ที่ระบุ Commit ตรงและตรวจ Native Identity, ป้องกันการเขียนทับและจัดการ Writer Lease, รักษา Connector ID ตามที่ ChatGPT ส่งมาจริง พร้อมแสดงการปฏิเสธสิทธิ์อย่างตรงไปตรงมา ทั้งหมดเป็น Candidate สำหรับทดสอบในเครื่องก่อน Security Review และ Official Release ไม่ได้ทำให้ Scheduled Task ทำงานต่อเนื่องระหว่างรอบ
+- **ภาษาไทย:** เพิ่ม Git import ที่ระบุ Commit ตรงและตรวจ Native Identity, ป้องกันการเขียนทับและจัดการ Writer Lease, รักษา Connector ID ตามที่ ChatGPT ส่งมาจริง พร้อมแสดงการปฏิเสธสิทธิ์อย่างตรงไปตรงมา ทั้งหมดเป็น Candidate สำหรับทดสอบในเครื่องก่อนผ่าน Security Validation และ Official Release ไม่ได้ทำให้ Scheduled Task ทำงานต่อเนื่องระหว่างรอบ
 
 ### What's new in v5.8.6
 
