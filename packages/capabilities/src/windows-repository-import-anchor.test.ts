@@ -162,6 +162,19 @@ describe.skipIf(process.platform !== 'win32')('Windows repository import native 
       await expect(publish()).rejects.toMatchObject({
         stderr: expect.stringContaining('IMPORT_STAGE_WORKTREE_CHANGED'),
       });
+      await rm(path.join(stage, 'unexpected.txt'));
+      await execFileAsync('git', ['-C', stage, 'update-index', '--assume-unchanged', 'proof.txt']);
+      await writeFile(proofPath, 'concealed by assume-unchanged');
+      await expect(publish()).rejects.toMatchObject({
+        stderr: expect.stringContaining('IMPORT_STAGE_INDEX_FLAGS_UNSAFE'),
+      });
+      await execFileAsync('git', ['-C', stage, 'update-index', '--no-assume-unchanged', 'proof.txt']);
+      await writeFile(proofPath, 'original checked-out content');
+      await execFileAsync('git', ['-C', stage, 'update-index', '--skip-worktree', 'proof.txt']);
+      await writeFile(proofPath, 'concealed by skip-worktree');
+      await expect(publish()).rejects.toMatchObject({
+        stderr: expect.stringContaining('IMPORT_STAGE_INDEX_FLAGS_UNSAFE'),
+      });
       expect(await readdir(workspace)).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });

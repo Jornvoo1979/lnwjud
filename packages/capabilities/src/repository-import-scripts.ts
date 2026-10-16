@@ -80,6 +80,9 @@ try {
  $stage=[string]$spec.stagePath
  $head=& $git -c core.fsmonitor=false -C $stage rev-parse --verify HEAD 2>$null
  if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($head) -or $head.Trim().ToLowerInvariant() -cne ([string]$spec.commit).ToLowerInvariant()){throw 'IMPORT_STAGE_HEAD_CHANGED'}
+ # Git status may hide mutated files when the index marks them assume-unchanged or skip-worktree.
+ $indexTags=& $git -C $stage ls-files -v 2>$null
+ if($LASTEXITCODE -ne 0 -or @($indexTags | Where-Object {$_ -cmatch '^[a-zS] '}).Count -gt 0){throw 'IMPORT_STAGE_INDEX_FLAGS_UNSAFE'}
  $changes=& $git -c core.fsmonitor=false -C $stage status --porcelain=v1 --untracked-files=all 2>$null
  if($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($changes -join [Environment]::NewLine))){throw 'IMPORT_STAGE_WORKTREE_CHANGED'}
  $identity=$anchor.PrepareStage($stage)
