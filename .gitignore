@@ -24,6 +24,8 @@ native/windows-ocr/obj/
 *.last-run.json
 
 # Test & Coverage
+# Local audit and verification evidence; published release assets remain separate.
+.audit/
 coverage/
 test-results/
 artifacts/
