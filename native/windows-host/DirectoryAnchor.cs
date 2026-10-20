@@ -57,7 +57,7 @@ internal sealed class DirectoryAnchor : IDisposable
                 RequireSameVolume(parent);
             }
 
-            if (!PathsEqual(FinalPath(parent), absoluteWorkspace))
+            if (!PathsEqual(FinalPathOf(parent), absoluteWorkspace))
                 throw new IOException("WINDOWS_ANCHOR_WORKSPACE_IDENTITY_CHANGED");
 
             for (var index = 0; index < relativeSegments.Length - 1; index++)

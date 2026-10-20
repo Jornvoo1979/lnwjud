@@ -232,9 +232,9 @@ internal static class Program
 
     private static void HardenChildEnvironment()
     {
-        foreach (var key in Environment.GetEnvironmentVariables().Keys.Cast<object>().Select(static value => Convert.ToString(value)).Where(static value => value is not null))
+        foreach (var key in Environment.GetEnvironmentVariables().Keys.Cast<object>().Select(static value => Convert.ToString(value)).OfType<string>())
         {
-            if (System.Text.RegularExpressions.Regex.IsMatch(key!, "(api[_-]?key|token|password|secret)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            if (System.Text.RegularExpressions.Regex.IsMatch(key, "(api[_-]?key|token|password|secret)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 Environment.SetEnvironmentVariable(key, null);
         }
         Environment.SetEnvironmentVariable("GIT_CONFIG_NOSYSTEM", "1");
