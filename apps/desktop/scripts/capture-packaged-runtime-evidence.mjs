@@ -25,6 +25,8 @@ const TARGETS = Object.freeze({
       ['windows-capability-bridge.integrity.json', 'resources/windows-capability-bridge.integrity.json'],
       ['windows-secret-migrator.exe', 'resources/windows-secret-migrator/lnwjud-windows-secret-migrator.exe'],
       ['windows-secret-migrator.sha256', 'resources/windows-secret-migrator/lnwjud-windows-secret-migrator.sha256'],
+      ['native-host', 'resources/native-host/windows/{arch}/lnwjud-windows-host.exe'],
+      ['native-host-manifest', 'resources/native-host/windows/{arch}/NATIVE_HOST.json'],
       ['rg.exe', 'resources/runtime-tools/ripgrep/rg.exe'],
       ['rg-manifest', 'resources/runtime-tools/ripgrep/BUNDLED_RIPGREP.json'],
       ['tunnel-client.exe', 'resources/tunnel-client/tunnel-client.exe'],
@@ -239,7 +241,9 @@ async function verifyNativeHostManifest(filePath, platform, arch, relativePath) 
   } catch {
     throw new Error(`Packaged native-host manifest is not valid JSON: ${relativePath}`);
   }
-  const expectedName = platform === 'darwin' ? 'lnwjud-macos-host' : 'lnwjud-linux-host';
+  const expectedName = platform === 'win32'
+    ? 'lnwjud-windows-host.exe'
+    : platform === 'darwin' ? 'lnwjud-macos-host' : 'lnwjud-linux-host';
   if (manifest?.schemaVersion !== 1 || manifest?.name !== expectedName || manifest.platform !== platform || manifest.arch !== arch || manifest.verified !== true
     || typeof manifest.sha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(manifest.sha256)
     || !Number.isSafeInteger(manifest.sizeBytes) || manifest.sizeBytes < 1) {
@@ -247,7 +251,7 @@ async function verifyNativeHostManifest(filePath, platform, arch, relativePath) 
   }
   const executablePath = path.join(path.dirname(filePath), manifest.name);
   const metadata = await assertRegularCanonicalFile(executablePath, `Packaged native-host executable: ${relativePath}`);
-  if ((metadata.mode & 0o111) === 0 || metadata.size !== manifest.sizeBytes) throw new Error(`Packaged native-host executable metadata is invalid: ${relativePath}`);
+  if ((platform !== 'win32' && (metadata.mode & 0o111) === 0) || metadata.size !== manifest.sizeBytes) throw new Error(`Packaged native-host executable metadata is invalid: ${relativePath}`);
   const actualSha256 = await sha256File(executablePath);
   if (actualSha256 !== manifest.sha256.toLowerCase()) throw new Error(`Packaged native-host hash mismatch: ${relativePath}`);
 }

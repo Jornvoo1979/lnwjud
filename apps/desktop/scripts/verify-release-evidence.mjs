@@ -160,6 +160,8 @@ function requiredRuntimePaths(platform, arch) {
       'resources/windows-capability-bridge.integrity.json',
       'resources/windows-secret-migrator/lnwjud-windows-secret-migrator.exe',
       'resources/windows-secret-migrator/lnwjud-windows-secret-migrator.sha256',
+      `resources/native-host/windows/${arch}/lnwjud-windows-host.exe`,
+      `resources/native-host/windows/${arch}/NATIVE_HOST.json`,
       'resources/runtime-tools/ripgrep/rg.exe',
       'resources/runtime-tools/ripgrep/BUNDLED_RIPGREP.json',
       'resources/tunnel-client/tunnel-client.exe',

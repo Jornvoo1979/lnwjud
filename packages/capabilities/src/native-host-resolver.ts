@@ -8,11 +8,16 @@ export function resolveNativeHostBridge(options: {
   readonly arch: string;
   readonly executablePaths: readonly string[];
 }): NativeHostProcessBridge | undefined {
-  if ((options.platform !== 'darwin' && options.platform !== 'linux') || !['x64', 'arm64'].includes(options.arch)) return undefined;
+  const supported = options.platform === 'win32'
+    ? options.arch === 'x64'
+    : (options.platform === 'darwin' || options.platform === 'linux') && ['x64', 'arm64'].includes(options.arch);
+  if (!supported) return undefined;
   const executable = options.executablePaths.find((candidate) => existsSync(candidate));
   if (executable === undefined || !path.isAbsolute(executable)) return undefined;
   const manifestPath = path.join(path.dirname(executable), 'NATIVE_HOST.json');
-  const expectedName = options.platform === 'darwin' ? 'lnwjud-macos-host' : 'lnwjud-linux-host';
+  const expectedName = options.platform === 'win32'
+    ? 'lnwjud-windows-host.exe'
+    : options.platform === 'darwin' ? 'lnwjud-macos-host' : 'lnwjud-linux-host';
   try {
     const executableStat = lstatSync(executable);
     const manifestStat = lstatSync(manifestPath);

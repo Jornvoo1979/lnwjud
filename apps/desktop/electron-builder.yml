@@ -70,6 +70,8 @@ win:
       to: windows-ocr
     - from: ../../native/windows-secret-migrator/bin/win-x64
       to: windows-secret-migrator
+    - from: build/native-host/windows/x64
+      to: native-host/windows/x64
 mac:
   sign: scripts/sign-macos-runtime.mjs
   icon: build/icon-1024.png

@@ -7,7 +7,7 @@ response alone is never capability readiness.
 
 ## Native-host protocol
 
-The macOS Swift host and Linux Rust host use bounded newline-delimited JSON:
+The macOS Swift host, Linux Rust host, and Windows .NET host use bounded newline-delimited JSON:
 
 ```json
 {"id":"request-id","operation":"health","input":{}}
@@ -40,6 +40,14 @@ Linux (run on Linux):
 cargo test --manifest-path native/linux-host/Cargo.toml --locked
 cargo build --release --manifest-path native/linux-host/Cargo.toml --locked
 ```
+
+Windows (run on Windows 10 x64 or newer supported Windows):
+
+```text
+node apps/desktop/scripts/build-windows-host.mjs
+```
+
+The Windows host is initially an internal safety provider only. Packaging it does not make derived-worktree mutation ready; restricted-token launch, directory-handle identity, Job Object containment, and target-host acceptance remain separate release gates.
 
 The Desktop scripts stage the target binary under
 `apps/desktop/build/native-host/<platform>/<arch>/`, write `NATIVE_HOST.json`,
