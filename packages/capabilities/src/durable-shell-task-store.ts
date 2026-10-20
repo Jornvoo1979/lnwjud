@@ -1258,8 +1258,22 @@ async function containmentReceipt() {
   if (!spec.containment) return undefined;
   try {
     const receipt = JSON.parse(await readFile(spec.containment.receiptPath, 'utf8'));
-    return receipt.kind === 'windows_job_v1' && receipt.activeProcesses === 0 && Number.isInteger(receipt.exitCode)
-      && ['completed', 'cancelled', 'timed_out'].includes(receipt.outcome) ? receipt : undefined;
+    if (receipt.kind !== spec.containment.receiptKind
+      || receipt.activeProcesses !== 0
+      || !Number.isInteger(receipt.exitCode)
+      || !['completed', 'cancelled', 'timed_out'].includes(receipt.outcome)) return undefined;
+
+    if (receipt.kind === 'windows_native_process_v1') {
+      if (!Number.isInteger(receipt.pid) || receipt.pid < 1
+        || typeof receipt.processCreationTime !== 'string' || !/^[0-9]+$/.test(receipt.processCreationTime)
+        || receipt.restrictedToken !== true
+        || receipt.assignedBeforeResume !== true
+        || receipt.killOnJobClose !== true
+        || typeof receipt.jobIdentity !== 'string' || !/^[0-9a-f]{32}$/i.test(receipt.jobIdentity)) return undefined;
+      return receipt;
+    }
+
+    return receipt.kind === 'windows_job_v1' ? receipt : undefined;
   } catch { return undefined; }
 }
 
