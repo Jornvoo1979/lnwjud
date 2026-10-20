@@ -170,12 +170,17 @@ internal static class Program
             File.Move(temporary, receiptPath);
             return exitCode;
         }
-        catch
+        catch (Exception error)
         {
-            Console.Error.WriteLine("CONTAINMENT_UNRESOLVED");
+            Console.Error.WriteLine($"CONTAINMENT_UNRESOLVED:{ContainmentErrorCode(error.Message)}");
             return 125;
         }
     }
+
+    private static string ContainmentErrorCode(string message) =>
+        System.Text.RegularExpressions.Regex.IsMatch(message, "^WINDOWS_[A-Z0-9_]+$")
+            ? message
+            : "WINDOWS_CONTAINMENT_INTERNAL_ERROR";
 
     private static object WorktreeAnchorProbe(string id, JsonElement input)
     {

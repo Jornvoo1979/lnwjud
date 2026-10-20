@@ -26,7 +26,15 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       expect(result).toMatchObject({ ok: true, value: { state: 'running' } });
       if (!result.ok) return;
       await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(manager.status(result.value.processId)).toMatchObject({ ok: true, value: { state: 'running' } });
+      const earlyStatus = manager.status(result.value.processId);
+      if (earlyStatus.ok && earlyStatus.value.state !== 'running') {
+        const diagnostics = manager.logs(result.value.processId, { tailLines: 20 });
+        const stderrCodes = diagnostics.ok
+          ? diagnostics.value.entries.filter((entry) => entry.stream === 'stderr').map((entry) => entry.text.trim()).filter(Boolean)
+          : [];
+        throw new Error(`Native containment left running state early: ${earlyStatus.value.state}; ${stderrCodes.join(' | ')}`);
+      }
+      expect(earlyStatus).toMatchObject({ ok: true, value: { state: 'running' } });
       await expect.poll(() => manager.status(result.value.processId).ok
         ? manager.status(result.value.processId).value.state : 'unknown', { timeout: process.env.CI ? 100000 : 12000 }).toBe('exited');
       expect(await readFile(finished, 'utf8')).toBe('yes');
