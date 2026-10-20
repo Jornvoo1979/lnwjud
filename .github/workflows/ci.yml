@@ -59,6 +59,11 @@ jobs:
         shell: bash
         run: pnpm typecheck
 
+      - name: Build verified Windows native containment host
+        if: matrix.name == 'Windows'
+        shell: powershell
+        run: node apps/desktop/scripts/build-windows-host.mjs
+
       - name: Install ripgrep for native search acceptance (Windows)
         if: matrix.name == 'Windows'
         shell: powershell
@@ -168,6 +173,11 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Build verified Windows native containment host
+        if: matrix.name == 'Windows'
+        shell: powershell
+        run: node apps/desktop/scripts/build-windows-host.mjs
 
       - name: Build workspace packages used by desktop acceptance tests
         shell: bash
@@ -649,6 +659,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build verified Windows native containment host
+        shell: powershell
+        run: node apps/desktop/scripts/build-windows-host.mjs
+
       - name: Build workspace type declarations
         run: pnpm typecheck
 
@@ -763,6 +777,10 @@ jobs:
             }
             rg --version
           }
+
+      - name: Build verified Windows native containment host
+        shell: powershell
+        run: node apps/desktop/scripts/build-windows-host.mjs
 
       - name: Run pull-request verification gate
         if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
