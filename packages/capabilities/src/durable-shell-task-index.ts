@@ -16,6 +16,7 @@ export interface DurableTaskReservation {
   readonly ownerWorkspaceId?: string;
   /** Trusted native proof path; never accepted from MCP caller input. */
   readonly nativeReceiptPath?: string;
+  readonly nativeReceiptKind?: 'windows_job_v1' | 'windows_native_process_v1';
   readonly launchRecord?: DurableTaskLaunchRecord;
 }
 
@@ -78,7 +79,9 @@ export class DurableShellTaskIndex {
 
   public async reserve(input: DurableTaskReservation): Promise<Result<DurableTaskReservationResult>> {
     if ((input.mutationKind !== undefined && input.mutationKind !== 'opaque' && input.mutationKind !== 'repository_import' && input.mutationKind !== 'opaque_uncontained' && input.mutationKind !== 'opaque_contained_process')
-      || (input.mutationKind === 'opaque_contained_process' && (typeof input.nativeReceiptPath !== 'string' || !path.isAbsolute(input.nativeReceiptPath)))
+      || (input.mutationKind === 'opaque_contained_process'
+        && (typeof input.nativeReceiptPath !== 'string' || !path.isAbsolute(input.nativeReceiptPath)
+          || (input.nativeReceiptKind !== 'windows_job_v1' && input.nativeReceiptKind !== 'windows_native_process_v1')))
       || !isSafeTaskId(input.taskId)
       || !/^[a-f0-9]{64}$/i.test(input.requestDigest)
       || (input.launchRecord !== undefined && (!isLaunchRecord(input.launchRecord) || input.launchRecord.taskId !== input.taskId))) {
@@ -95,7 +98,8 @@ export class DurableShellTaskIndex {
           if (marker.record?.taskId === input.taskId) {
             if (marker.record.requestDigest !== input.requestDigest || marker.record.mutationKind !== (input.mutationKind ?? 'opaque')
               || marker.record.ownerClientId !== input.ownerClientId
-              || marker.record.ownerWorkspaceId !== input.ownerWorkspaceId) {
+              || marker.record.ownerWorkspaceId !== input.ownerWorkspaceId
+              || marker.record.nativeReceiptKind !== input.nativeReceiptKind) {
               return err(appError('CONFLICT', 'Durable task ID is already reserved for another request', true));
             }
             return ok({ activeTasks: activeTasks + 1, created: false, markerPath: marker.path });
@@ -105,7 +109,7 @@ export class DurableShellTaskIndex {
           }
           if (marker.record.mutationKind === 'opaque_contained_process') {
             const native = marker.record.nativeReceiptPath === undefined
-              ? undefined : await readWindowsContainmentReceipt(marker.record.nativeReceiptPath);
+              ? undefined : await readWindowsContainmentReceipt(marker.record.nativeReceiptPath, marker.record.nativeReceiptKind);
             if (native !== undefined) {
               await rm(marker.path, { force: true }).catch(() => undefined);
               continue;
@@ -140,7 +144,10 @@ export class DurableShellTaskIndex {
           taskId: input.taskId,
           requestDigest: input.requestDigest,
           mutationKind: input.mutationKind ?? 'opaque',
-          ...(input.nativeReceiptPath === undefined ? {} : { nativeReceiptPath: input.nativeReceiptPath }),
+          ...(input.nativeReceiptPath === undefined ? {} : {
+            nativeReceiptPath: input.nativeReceiptPath,
+            nativeReceiptKind: input.nativeReceiptKind,
+          }),
           ownerClientId: input.ownerClientId,
           ...(input.ownerWorkspaceId === undefined ? {} : { ownerWorkspaceId: input.ownerWorkspaceId }),
           reservedAt: this.now().toISOString(),
@@ -411,6 +418,7 @@ interface MarkerRecord {
   readonly ownerClientId?: string;
   readonly ownerWorkspaceId?: string;
   readonly nativeReceiptPath?: string;
+  readonly nativeReceiptKind?: 'windows_job_v1' | 'windows_native_process_v1';
   readonly reservedAt?: string;
   readonly launcherPid?: number;
   readonly launcherStartedAt?: string;
@@ -461,6 +469,7 @@ async function readMarker(filename: string): Promise<MarkerRecord | undefined> {
     ...(typeof value.ownerClientId === 'string' ? { ownerClientId: value.ownerClientId } : {}),
     ...(typeof value.ownerWorkspaceId === 'string' ? { ownerWorkspaceId: value.ownerWorkspaceId } : {}),
     ...(typeof value.nativeReceiptPath === 'string' && path.isAbsolute(value.nativeReceiptPath) ? { nativeReceiptPath: value.nativeReceiptPath } : {}),
+    ...((value.nativeReceiptKind === 'windows_job_v1' || value.nativeReceiptKind === 'windows_native_process_v1') ? { nativeReceiptKind: value.nativeReceiptKind } : {}),
     ...(typeof value.reservedAt === 'string' ? { reservedAt: value.reservedAt } : {}),
     ...(Number.isInteger(value.launcherPid) ? { launcherPid: Number(value.launcherPid) } : {}),
     ...(typeof value.launcherStartedAt === 'string' ? { launcherStartedAt: value.launcherStartedAt } : {}),

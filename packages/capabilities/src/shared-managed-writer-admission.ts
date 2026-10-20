@@ -57,6 +57,7 @@ export class SharedManagedWriterAdmission {
     readonly workspaceId: string;
     readonly kind: WriterContainmentKind;
     readonly nativeReceiptPath?: string;
+    readonly nativeReceiptKind?: 'windows_job_v1' | 'windows_native_process_v1';
   }): Promise<Result<ManagedWriterAdmissionLease>> {
     if (!input.actorClientId || !input.workspaceId
       || (input.kind !== 'synchronous_mutation' && input.kind !== 'uncontained_process' && input.kind !== 'contained_process')) {
@@ -68,7 +69,10 @@ export class SharedManagedWriterAdmission {
       taskId: id,
       requestDigest: digest,
       mutationKind: input.kind === 'uncontained_process' ? 'opaque_uncontained' : input.kind === 'contained_process' ? 'opaque_contained_process' : 'opaque',
-      ...(input.nativeReceiptPath === undefined ? {} : { nativeReceiptPath: input.nativeReceiptPath }),
+      ...(input.nativeReceiptPath === undefined ? {} : {
+        nativeReceiptPath: input.nativeReceiptPath,
+        nativeReceiptKind: input.nativeReceiptKind ?? 'windows_job_v1',
+      }),
       ownerClientId: input.actorClientId,
       ownerWorkspaceId: input.workspaceId,
     });

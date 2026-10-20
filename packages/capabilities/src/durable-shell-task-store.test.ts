@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ShellCapabilityBackend } from './shell-backend.js';
 import { DurableShellTaskStore, parsePosixProcessProbe } from './durable-shell-task-store.js';
+import { resolvePackagedWindowsNativeContainmentExecutable } from '@lnwjud/process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -91,7 +92,7 @@ describe('durable shell background tasks', () => {
     }, { timeout: process.env.CI ? 90000 : 12000 }).toBe('completed');
   }, process.env.CI ? 160000 : 30000);
 
-  it.skipIf(process.platform !== 'win32')('keeps durable ownership until detached descendants finish and persists native zero-active proof', async () => {
+  it.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeContainmentExecutable() === undefined)('keeps durable ownership until detached descendants finish and persists native zero-active proof', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-contained-'));
     temporaryRoots.push(root);
     const state = path.join(root, '.tasks');
@@ -113,7 +114,9 @@ describe('durable shell background tasks', () => {
       return status.ok ? status.value.state : 'unknown';
     }, { timeout: 10000 }).toBe('completed');
     expect(await readFile(marker, 'utf8').catch(() => 'not finished')).toBe('done');
-    expect(JSON.parse(await readFile(path.join(state, 'contained', 'containment.receipt.json'), 'utf8'))).toMatchObject({ kind: 'windows_job_v1', activeProcesses: 0 });
+    expect(JSON.parse(await readFile(path.join(state, 'contained', 'containment.receipt.json'), 'utf8'))).toMatchObject({
+      kind: 'windows_native_process_v1', activeProcesses: 0, restrictedToken: true, assignedBeforeResume: true, killOnJobClose: true,
+    });
   }, 15000);
 
   it('keeps liveness output-free but returns bounded terminal CI proof only to its workspace', async () => {

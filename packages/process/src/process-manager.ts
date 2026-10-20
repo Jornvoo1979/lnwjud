@@ -7,7 +7,8 @@ import { PathExecutableResolver, type ExecutableResolver } from './executable-re
 import { LogRingBuffer } from './ring-buffer.js';
 import { createProcessTreeTerminator, type ProcessTreeTerminator } from './process-tree.js';
 import { createSpawnInvocationFactory, type SpawnInvocationFactory } from './spawn-invocation.js';
-import { prepareWindowsContainedLaunch, readWindowsContainmentReceipt, type WindowsContainmentReceipt } from './windows-contained-launch.js';
+import { prepareWindowsContainedLaunch, readWindowsContainmentReceipt, type WindowsContainmentReceipt, type WindowsContainmentReceiptKind } from './windows-contained-launch.js';
+import { resolvePackagedWindowsNativeContainmentExecutable, type WindowsNativeContainmentExecutable } from './windows-native-containment.js';
 import type { LogQuery, ManagedProcess, ManagedProcessStart, ManagedProcessState, ProcessLogResult } from './process-types.js';
 
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
@@ -26,6 +27,7 @@ interface ManagedRecord {
   readonly logs: LogRingBuffer;
   readonly nativeReceiptPath?: string;
   readonly nativeCancelPath?: string;
+  readonly nativeReceiptKind?: WindowsContainmentReceiptKind;
   readonly onVerifiedNativeTermination?: () => void;
   nativeTerminationNotified?: boolean;
   state: ManagedProcessState;
@@ -49,6 +51,7 @@ export class ProcessManager {
     private readonly maxActiveProcesses: number = DEFAULT_MAX_ACTIVE_MANAGED_PROCESSES,
     private readonly invocationFactory: SpawnInvocationFactory = createSpawnInvocationFactory(),
     private readonly nativeContainmentRoot?: string,
+    private readonly windowsNativeContainment: WindowsNativeContainmentExecutable | undefined = resolvePackagedWindowsNativeContainmentExecutable(),
   ) {}
 
   public async start(
@@ -84,6 +87,7 @@ export class ProcessManager {
     let contained: Awaited<ReturnType<typeof prepareWindowsContainedLaunch>> | undefined;
     if (process.platform === 'win32' && this.nativeContainmentRoot !== undefined) {
       try {
+        if (this.windowsNativeContainment === undefined) throw new Error('WINDOWS_NATIVE_CONTAINMENT_UNAVAILABLE');
         contained = await prepareWindowsContainedLaunch({
           directory: path.join(this.nativeContainmentRoot, processId),
           executable: invocation.value.executable,
@@ -92,6 +96,7 @@ export class ProcessManager {
           timeoutMs: spec.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           ...(invocation.value.windowsVerbatimArguments === undefined
             ? {} : { windowsVerbatimArguments: invocation.value.windowsVerbatimArguments }),
+          nativeHost: this.windowsNativeContainment,
         });
       } catch {
         return rejectBeforeSpawn(err(appError('INTERNAL_ERROR', 'Native process containment could not be prepared')));
@@ -113,7 +118,11 @@ export class ProcessManager {
       spec,
       startedAt: new Date().toISOString(),
       logs: new LogRingBuffer(),
-      ...(contained === undefined ? {} : { nativeReceiptPath: contained.receiptPath, nativeCancelPath: contained.cancelPath }),
+      ...(contained === undefined ? {} : {
+        nativeReceiptPath: contained.receiptPath,
+        nativeCancelPath: contained.cancelPath,
+        nativeReceiptKind: contained.receiptKind,
+      }),
       ...(onVerifiedNativeTermination === undefined ? {} : { onVerifiedNativeTermination }),
       state: 'starting',
     };
@@ -246,7 +255,7 @@ export class ProcessManager {
 
   private async handleNativeClose(record: ManagedRecord): Promise<void> {
     if (record.nativeReceiptPath === undefined) return;
-    const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath);
+    const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind);
     if (receipt === undefined) {
       this.markTerminationUnverified(record, 'Native process Job Object completion is unverified');
       return;
@@ -300,7 +309,7 @@ export class ProcessManager {
       }
       const deadline = Date.now() + 12000;
       while (Date.now() < deadline) {
-        const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath);
+        const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind);
         if (receipt !== undefined) {
           this.acceptNativeReceipt(record, receipt);
           return true;

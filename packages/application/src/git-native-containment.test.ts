@@ -6,11 +6,12 @@ import { GitService } from './git-service.js';
 import { ok } from '@lnwjud/domain';
 import type { ManagedWriterAdmissionPort } from './writer-admission.js';
 import type { Workspace, WorkspaceRepository } from '@lnwjud/workspace';
+import { resolvePackagedWindowsNativeContainmentExecutable } from '@lnwjud/process';
 
 const temporaryRoots: string[] = [];
 afterEach(async () => { await Promise.all(temporaryRoots.splice(0).map((x) => rm(x, { force:true, recursive:true, maxRetries:8, retryDelay:100 }))); });
 
-describe.skipIf(process.platform !== 'win32')('Windows native GitService writer admission', () => {
+describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeContainmentExecutable() === undefined)('Windows native GitService writer admission', () => {
   it('runs a real Git init in a native contained Job and releases only after native zero-active proof', async () => {
     const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-git-native-')));
     temporaryRoots.push(root);
@@ -39,6 +40,9 @@ describe.skipIf(process.platform !== 'win32')('Windows native GitService writer 
     expect(nativeReservations).toEqual([path.join(nativeRoot, entries[0]!, 'containment.receipt.json')]);
     expect(entries).toHaveLength(1);
     const receipt=JSON.parse(await readFile(path.join(nativeRoot,entries[0]!,'containment.receipt.json'),'utf8')) as Record<string,unknown>;
-    expect(receipt).toMatchObject({kind:'windows_job_v1',activeProcesses:0,outcome:'completed',exitCode:0});
+    expect(receipt).toMatchObject({
+      kind:'windows_native_process_v1',activeProcesses:0,outcome:'completed',exitCode:0,
+      restrictedToken:true,assignedBeforeResume:true,killOnJobClose:true,
+    });
   },45000);
 });

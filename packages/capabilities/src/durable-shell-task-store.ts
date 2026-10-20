@@ -2,7 +2,13 @@ import { execFile, spawn } from 'node:child_process';
 import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { prepareWindowsContainedLaunch, readWindowsContainmentReceipt } from '@lnwjud/process';
+import {
+  prepareWindowsContainedLaunch,
+  readWindowsContainmentReceipt,
+  resolvePackagedWindowsNativeContainmentExecutable,
+  type WindowsContainmentReceiptKind,
+  type WindowsNativeContainmentExecutable,
+} from '@lnwjud/process';
 import { promisify } from 'node:util';
 import { appError, err, ok, type GoalTaskCancellationObservation, type Result } from '@lnwjud/domain';
 import {
@@ -32,7 +38,7 @@ export interface DurableShellLaunchRequest {
 }
 
 interface DurableTaskMetadata {
-  readonly containment?: 'windows_job_v1';
+  readonly containment?: WindowsContainmentReceiptKind;
   readonly version: 1;
   readonly task_id: string;
   readonly command_fingerprint?: string;
@@ -58,7 +64,7 @@ interface DurableTaskMetadata {
 }
 
 interface DurableWorkerSpec {
-  readonly containment?: { readonly receiptPath: string; readonly cancelPath: string };
+  readonly containment?: { readonly receiptPath: string; readonly cancelPath: string; readonly receiptKind: WindowsContainmentReceiptKind };
   readonly version: 1;
   readonly taskId: string;
   readonly executable: string;
@@ -110,6 +116,7 @@ function repositoryImportBootstrapEnvironment(): NodeJS.ProcessEnv {
 export interface DurableShellTaskStoreOptions {
   readonly maxConcurrentTasks?: number;
   readonly platform?: NodeJS.Platform;
+  readonly windowsNativeContainment?: WindowsNativeContainmentExecutable | null;
 }
 
 export const DEFAULT_MAX_CONCURRENT_DURABLE_TASKS = 16;
@@ -118,10 +125,14 @@ export class DurableShellTaskStore {
   private readonly maxConcurrentTasks: number;
   private readonly platform: NodeJS.Platform;
   private readonly activeIndex: DurableShellTaskIndex;
+  private readonly windowsNativeContainment: WindowsNativeContainmentExecutable | undefined;
 
   public constructor(private readonly rootDirectory: string, options: DurableShellTaskStoreOptions = {}) {
     this.maxConcurrentTasks = normalizeMaxConcurrentTasks(options.maxConcurrentTasks);
     this.platform = options.platform ?? process.platform;
+    this.windowsNativeContainment = options.windowsNativeContainment === null
+      ? undefined
+      : options.windowsNativeContainment ?? resolvePackagedWindowsNativeContainmentExecutable();
     this.activeIndex = new DurableShellTaskIndex(rootDirectory, {
       maxConcurrentTasks: this.maxConcurrentTasks,
       inspectTask: async (taskId): Promise<ActiveTaskInspection> => this.inspectTaskForIndex(taskId),
@@ -191,7 +202,7 @@ export class DurableShellTaskStore {
     const stderrPath = path.join(taskDirectory, STDERR_FILENAME);
     const specPath = path.join(taskDirectory, SPEC_FILENAME);
     const metadata: DurableTaskMetadata = {
-      ...(this.platform === 'win32' ? { containment: 'windows_job_v1' as const } : {}),
+      ...(this.platform === 'win32' ? { containment: 'windows_native_process_v1' as const } : {}),
       version: 1,
       task_id: request.taskId,
       ...(request.commandFingerprint === undefined ? {} : { command_fingerprint: request.commandFingerprint }),
@@ -231,11 +242,12 @@ export class DurableShellTaskStore {
       const contained = this.platform === 'win32' ? await prepareWindowsContainedLaunch({
         directory: taskDirectory, executable: request.executable, args: request.arguments, cwd: request.cwd, timeoutMs: request.timeoutSeconds * 1000,
         windowsVerbatimArguments: request.windowsVerbatimArguments === true,
+        nativeHost: this.windowsNativeContainment ?? (() => { throw new Error('WINDOWS_NATIVE_CONTAINMENT_UNAVAILABLE'); })(),
       }) : undefined;
       const workerSpec: DurableWorkerSpec = contained === undefined ? spec : {
         ...spec, executable: contained.executable, arguments: contained.args,
         windowsVerbatimArguments: false,
-        containment: { receiptPath: contained.receiptPath, cancelPath: contained.cancelPath },
+        containment: { receiptPath: contained.receiptPath, cancelPath: contained.cancelPath, receiptKind: contained.receiptKind },
       };
       await writeFile(metadataPath, JSON.stringify(metadata), 'utf8');
       await writeFile(specPath, JSON.stringify(workerSpec), 'utf8');
@@ -629,8 +641,11 @@ export class DurableShellTaskStore {
     const finalized = await this.awaitTerminalMetadata(current.task_id);
     if (finalized !== undefined) return finalized;
 
-    if (current.containment === 'windows_job_v1') {
-      const receipt = await readWindowsContainmentReceipt(path.join(this.taskDirectory(current.task_id), 'containment.receipt.json'));
+    if (current.containment === 'windows_job_v1' || current.containment === 'windows_native_process_v1') {
+      const receipt = await readWindowsContainmentReceipt(
+        path.join(this.taskDirectory(current.task_id), 'containment.receipt.json'),
+        current.containment,
+      );
       current.state = receipt === undefined ? 'termination_unverified' : receipt.outcome === 'completed' ? (receipt.exitCode === 0 ? 'completed' : 'failed') : receipt.outcome;
       if (receipt === undefined) {
         current.error = 'Native containment termination could not be verified';

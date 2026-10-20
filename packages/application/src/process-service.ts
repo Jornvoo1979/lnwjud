@@ -259,7 +259,7 @@ export class ProcessService {
       actorClientId: actor.clientId,
       workspaceId,
       kind: nativeReceiptPath === undefined ? 'uncontained_process' : 'contained_process',
-      ...(nativeReceiptPath === undefined ? {} : { nativeReceiptPath }),
+      ...(nativeReceiptPath === undefined ? {} : { nativeReceiptPath, nativeReceiptKind: 'windows_native_process_v1' as const }),
     });
     if (reservation !== undefined && !reservation.ok) return reservation;
     const started = await this.processManager.start({

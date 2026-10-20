@@ -14,8 +14,13 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        if (args.Length != 0) return 64;
         HardenChildEnvironment();
+        if (args.Length != 0)
+        {
+            return args.Length == 3 && args[0] == "--contained-process"
+                ? RunContainedProcess(args[1], args[2])
+                : 64;
+        }
 
         string? line;
         while ((line = Console.ReadLine()) is not null)
@@ -83,6 +88,93 @@ internal static class Program
             "restricted_token_probe" => RestrictedTokenProbe(id, input),
             _ => Failure(id, "INVALID_INPUT", "Native host operation is not supported", false),
         };
+    }
+
+    private static int RunContainedProcess(string directory, string expectedSpecDigest)
+    {
+        try
+        {
+            if (!Path.IsPathFullyQualified(directory) || !System.Text.RegularExpressions.Regex.IsMatch(expectedSpecDigest, "^[0-9a-f]{64}$"))
+                return 64;
+            var specPath = Path.Combine(directory, "containment.json");
+            var bytes = File.ReadAllBytes(specPath);
+            var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    Encoding.ASCII.GetBytes(digest), Encoding.ASCII.GetBytes(expectedSpecDigest)))
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_IDENTITY_MISMATCH");
+
+            using var document = JsonDocument.Parse(bytes);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("version", out var version) || version.GetInt32() != 2
+                || !TryString(root, "executable", out var executable)
+                || !TryString(root, "cwd", out var cwd)
+                || !root.TryGetProperty("arguments", out var argumentsValue) || argumentsValue.ValueKind != JsonValueKind.Array
+                || !root.TryGetProperty("timeoutMs", out var timeoutValue) || !timeoutValue.TryGetInt32(out var timeoutMs)
+                || timeoutMs < 1
+                || !root.TryGetProperty("receiptKind", out var receiptKind) || receiptKind.GetString() != "windows_native_process_v1")
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_INVALID");
+            var verbatim = root.TryGetProperty("windowsVerbatimArguments", out var verbatimValue)
+                && verbatimValue.ValueKind == JsonValueKind.True;
+
+            var arguments = argumentsValue.EnumerateArray().Select(value =>
+            {
+                if (value.ValueKind != JsonValueKind.String) throw new IOException("WINDOWS_CONTAINMENT_ARGUMENT_INVALID");
+                var item = value.GetString() ?? string.Empty;
+                if (item.Contains('\0')) throw new IOException("WINDOWS_CONTAINMENT_ARGUMENT_INVALID");
+                return item;
+            }).ToArray();
+
+            using var token = RestrictedPrimaryToken.Create();
+            using var child = ContainedProcess.StartRestricted(executable, arguments, cwd, token.Handle, verbatim);
+            var cancelPath = Path.Combine(directory, "containment.cancel");
+            var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            var outcome = "completed";
+            int exitCode;
+            while (true)
+            {
+                if (File.Exists(cancelPath))
+                {
+                    outcome = "cancelled";
+                    child.Cancel();
+                    exitCode = 1;
+                    break;
+                }
+                if (DateTime.UtcNow >= deadline)
+                {
+                    outcome = "timed_out";
+                    child.Cancel();
+                    exitCode = 1;
+                    break;
+                }
+                if (child.TryGetVerifiedExit(out exitCode)) break;
+                Thread.Sleep(25);
+            }
+            if (child.ActiveProcesses != 0) throw new IOException("WINDOWS_CONTAINMENT_ACTIVE_DESCENDANTS");
+
+            var receipt = JsonSerializer.Serialize(new
+            {
+                kind = "windows_native_process_v1",
+                outcome,
+                exitCode,
+                activeProcesses = 0,
+                pid = child.ProcessId,
+                processCreationTime = child.CreationTime.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                restrictedToken = token.IsRestricted,
+                assignedBeforeResume = true,
+                killOnJobClose = true,
+                jobIdentity = child.JobIdentity,
+            }, JsonOptions);
+            var temporary = Path.Combine(directory, "containment.receipt.tmp");
+            var receiptPath = Path.Combine(directory, "containment.receipt.json");
+            File.WriteAllText(temporary, receipt, new UTF8Encoding(false));
+            File.Move(temporary, receiptPath);
+            return exitCode;
+        }
+        catch
+        {
+            Console.Error.WriteLine("CONTAINMENT_UNRESOLVED");
+            return 125;
+        }
     }
 
     private static object WorktreeAnchorProbe(string id, JsonElement input)
