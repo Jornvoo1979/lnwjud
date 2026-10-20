@@ -53,7 +53,7 @@ jobs:
         shell: pwsh
         env:
           LNWJUD_COSIGN_PATH: cosign
-        run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+        run: ./scripts/package-windows.ps1
 
       - name: Run packaged Windows Electron MCP and security smoke
         shell: pwsh
