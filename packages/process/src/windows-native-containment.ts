@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 export interface WindowsNativeContainmentExecutable {
   readonly executablePath: string;
@@ -22,13 +21,12 @@ interface NativeHostManifest {
 export function resolvePackagedWindowsNativeContainmentExecutable(): WindowsNativeContainmentExecutable | undefined {
   if (process.platform !== 'win32' || process.arch !== 'x64') return undefined;
   const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
-  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-  const monorepoRoot = path.resolve(moduleDirectory, '..', '..', '..');
+  const githubWorkspace = process.env.CI === 'true' && process.env.GITHUB_ACTIONS === 'true'
+    ? process.env.GITHUB_WORKSPACE
+    : undefined;
   const candidates = [
     resourcesPath === undefined ? undefined : path.join(resourcesPath, 'native-host', 'windows', 'x64', 'lnwjud-windows-host.exe'),
-    path.join(monorepoRoot, 'apps', 'desktop', 'build', 'native-host', 'windows', 'x64', 'lnwjud-windows-host.exe'),
-    path.resolve(process.cwd(), 'build', 'native-host', 'windows', 'x64', 'lnwjud-windows-host.exe'),
-    path.resolve(process.cwd(), 'apps', 'desktop', 'build', 'native-host', 'windows', 'x64', 'lnwjud-windows-host.exe'),
+    githubWorkspace === undefined ? undefined : path.join(githubWorkspace, 'apps', 'desktop', 'build', 'native-host', 'windows', 'x64', 'lnwjud-windows-host.exe'),
     path.resolve(path.dirname(process.execPath), 'resources', 'native-host', 'windows', 'x64', 'lnwjud-windows-host.exe'),
   ].filter((candidate): candidate is string => candidate !== undefined);
 
