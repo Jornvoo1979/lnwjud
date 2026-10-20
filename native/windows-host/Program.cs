@@ -14,13 +14,18 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        HardenChildEnvironment();
         if (args.Length != 0)
         {
             return args.Length == 3 && args[0] == "--contained-process"
                 ? RunContainedProcess(args[1], args[2])
                 : 64;
         }
+
+        // Protocol-mode operations must not inherit caller secrets. Contained
+        // process mode preserves the environment policy already chosen by its
+        // trusted caller: repository imports are minimized by DurableShellTaskStore,
+        // while direct managed processes use ProcessManager's explicit allowlist.
+        HardenChildEnvironment();
 
         string? line;
         while ((line = Console.ReadLine()) is not null)
