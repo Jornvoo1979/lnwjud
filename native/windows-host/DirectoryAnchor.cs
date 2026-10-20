@@ -10,7 +10,7 @@ internal sealed class DirectoryAnchor : IDisposable
     private const uint FileReadAttributes = 0x80;
     private const uint Synchronize = 0x00100000;
     private const uint ShareReadWrite = 0x3;
-    private const uint OpenExisting = 3;
+    private const uint OpenExistingDisposition = 3;
     private const uint FileFlagBackupSemantics = 0x02000000;
     private const uint FileFlagOpenReparsePoint = 0x00200000;
     private const uint ObjectCaseInsensitiveNoReparse = 0x1040;
@@ -39,7 +39,7 @@ internal sealed class DirectoryAnchor : IDisposable
 
         try
         {
-            var drive = CreateFileW(root, FileReadAttributes | Synchronize, ShareReadWrite, IntPtr.Zero, OpenExisting,
+            var drive = CreateFileW(root, FileReadAttributes | Synchronize, ShareReadWrite, IntPtr.Zero, OpenExistingDisposition,
                 FileFlagBackupSemantics | FileFlagOpenReparsePoint, IntPtr.Zero);
             if (drive.IsInvalid) throw new IOException("WINDOWS_ANCHOR_ROOT_UNAVAILABLE", new Win32Exception(Marshal.GetLastWin32Error()));
             _ancestors.Add(drive);
