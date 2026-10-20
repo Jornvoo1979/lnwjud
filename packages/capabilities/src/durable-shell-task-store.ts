@@ -242,7 +242,7 @@ export class DurableShellTaskStore {
       const contained = this.platform === 'win32' ? await prepareWindowsContainedLaunch({
         directory: taskDirectory, executable: request.executable, args: request.arguments, cwd: request.cwd, timeoutMs: request.timeoutSeconds * 1000,
         windowsVerbatimArguments: request.windowsVerbatimArguments === true,
-        nativeHost: this.windowsNativeContainment ?? (() => { throw new Error('WINDOWS_NATIVE_CONTAINMENT_UNAVAILABLE'); })(),
+        nativeHost: this.windowsNativeContainment ?? (() : WindowsNativeContainmentExecutable => { throw new Error('WINDOWS_NATIVE_CONTAINMENT_UNAVAILABLE'); })(),
       }) : undefined;
       const workerSpec: DurableWorkerSpec = contained === undefined ? spec : {
         ...spec, executable: contained.executable, arguments: contained.args,
