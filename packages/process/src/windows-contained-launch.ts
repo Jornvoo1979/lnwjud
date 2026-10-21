@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, open, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import {
@@ -59,6 +59,10 @@ export async function prepareWindowsContainedLaunch(input: {
   const specPath = path.join(input.directory, 'containment.json');
   const receiptPath = path.join(input.directory, 'containment.receipt.json');
   const cancelPath = path.join(input.directory, 'containment.cancel');
+  // A pre-provisioned directory is permitted; stale terminal/cancel artifacts are not.
+  const existing = await readdir(input.directory);
+  if (existing.includes('containment.receipt.json') || existing.includes('containment.receipt.tmp')
+    || existing.includes('containment.cancel')) throw new Error('WINDOWS_CONTAINMENT_STALE_ARTIFACT');
   const spec = JSON.stringify({
     version: 2,
     executable: input.executable,
