@@ -31,6 +31,14 @@ describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => 
         args: ['--version'],
         nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
       })).rejects.toMatchObject({ code: 'EEXIST' });
+      // Desktop may omit the parent containment directory; it must be provisioned safely.
+      const nestedDirectory = path.join(root, 'not-yet-created-parent', 'task');
+      const nested = await prepareWindowsContainedLaunch({
+        directory: nestedDirectory, executable: process.execPath, cwd: root, timeoutMs: 10000,
+        args: ['--version'],
+        nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
+      });
+      expect(nested.receiptPath).toBe(path.join(nestedDirectory, 'containment.receipt.json'));
       expect(invocation.executable).toBe(host);
       expect(invocation.args[0]).toBe('--contained-process');
       expect(invocation.args).toHaveLength(3);
