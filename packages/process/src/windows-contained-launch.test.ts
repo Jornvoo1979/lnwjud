@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { prepareWindowsContainedLaunch, readWindowsContainmentReceipt } from './windows-contained-launch.js';
-import { nativeReceiptMatchesHostExit } from './process-manager.js';
+import { nativeReceiptMatchesClosedHost, nativeReceiptMatchesHostExit } from './process-manager.js';
 
 describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => {
   it('prepares only the integrity-bound native host and refuses receipt downgrade', async () => {
@@ -154,5 +154,9 @@ describe('native host exit correlation', () => {
   });
   it('accepts only an equal known host exit code as a correlation check', () => {
     expect(nativeReceiptMatchesHostExit(receipt, 0)).toBe(true);
+    expect(nativeReceiptMatchesClosedHost(receipt, 0, false)).toBe(false);
+    expect(nativeReceiptMatchesClosedHost(receipt, 125, true)).toBe(false);
+    expect(nativeReceiptMatchesClosedHost(receipt, null, true)).toBe(false);
+    expect(nativeReceiptMatchesClosedHost(receipt, 0, true)).toBe(true);
   });
 });
