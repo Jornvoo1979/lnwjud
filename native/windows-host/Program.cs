@@ -102,7 +102,21 @@ internal static class Program
             if (!Path.IsPathFullyQualified(directory) || !System.Text.RegularExpressions.Regex.IsMatch(expectedSpecDigest, "^[0-9a-f]{64}$"))
                 return 64;
             var specPath = Path.Combine(directory, "containment.json");
-            var bytes = File.ReadAllBytes(specPath);
+            // The launch directory can be influenced by a local writer. Bound the
+            // spec before allocation and reject Windows reparse-point redirects.
+            // This is input hardening, not native receipt producer authentication.
+            var specInfo = new FileInfo(specPath);
+            if (!specInfo.Exists || specInfo.Length <= 0 || specInfo.Length > MaxInputBytes
+                || (specInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_UNTRUSTED_FILE");
+            using var specStream = new FileStream(specPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                4096, FileOptions.SequentialScan);
+            if (specStream.Length <= 0 || specStream.Length > MaxInputBytes)
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_TOO_LARGE");
+            var bytes = new byte[(int)specStream.Length];
+            specStream.ReadExactly(bytes);
+            if (specStream.Length != bytes.Length)
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_CHANGED");
             var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
             if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(digest), Encoding.ASCII.GetBytes(expectedSpecDigest)))
