@@ -116,6 +116,23 @@ describe('native receipt spec correlation', () => {
   });
 });
 
+describe('legacy receipt downgrade prevention', () => {
+  it('requires an explicit legacy receipt kind and never accepts it as native', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-legacy-receipt-'));
+    try {
+      const filename = path.join(root, 'containment.receipt.json');
+      await writeFile(filename, JSON.stringify({
+        kind: 'windows_job_v1', outcome: 'completed', exitCode: 0, activeProcesses: 0,
+      }));
+      expect(await readWindowsContainmentReceipt(filename)).toBeUndefined();
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1')).toBeUndefined();
+      expect(await readWindowsContainmentReceipt(filename, 'windows_job_v1')).toMatchObject({
+        kind: 'windows_job_v1', outcome: 'completed',
+      });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
 describe('native receipt file admission', () => {
   it('refuses oversized receipts before JSON parsing', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-receipt-size-'));
