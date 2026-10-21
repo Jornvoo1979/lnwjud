@@ -92,4 +92,31 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
     }
   }, 25000);
 
+  it('does not treat a genuine child exit 125 as verified native-host completion', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-native-125-'));
+    try {
+      const containedRoot = path.join(root, 'managed-processes');
+      await mkdir(containedRoot);
+      const processId = '5e765b63-a0c4-452f-8362-b416fc50a8ab';
+      let callbacks = 0;
+      const manager = new ProcessManager(undefined, undefined, undefined, undefined, containedRoot);
+      const result = await manager.start({
+        executable: process.execPath,
+        args: ['-e', 'setTimeout(() => process.exit(125), 100)'],
+        cwd: root, containmentId: processId, timeoutMs: 20000,
+      }, undefined, undefined, (): void => { callbacks++; });
+      expect(result).toMatchObject({ ok: true });
+      if (!result.ok) return;
+      await expect.poll(() => {
+        const state = manager.status(processId);
+        return state.ok ? state.value.state : 'unknown';
+      }, { timeout: 15000 }).toBe('termination_unverified');
+      expect(callbacks).toBe(0);
+      const receipt = JSON.parse(await readFile(path.join(containedRoot, processId, 'containment.receipt.json'), 'utf8'));
+      expect(receipt).toMatchObject({ kind: 'windows_native_process_v1', exitCode: 125 });
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+    }
+  }, 25000);
+
 });
