@@ -94,6 +94,36 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
     }
   }, 25000);
 
+  it('returns a bounded unverified error on native startup abort without releasing ownership', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-native-start-abort-'));
+    try {
+      const containedRoot = path.join(root, 'managed-processes');
+      await mkdir(containedRoot);
+      const processId = '59db53f7-02e1-4cc8-a286-e19f43620a97';
+      const controller = new AbortController();
+      let callbacks = 0;
+      const manager = new ProcessManager(undefined, undefined, undefined, undefined, containedRoot);
+      // onCreated is synchronous after spawn but before its spawn event; abort
+      // here exercises the in-flight startup cancellation path deterministically.
+      const starting = manager.start({
+        executable: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 30000)'],
+        cwd: root, containmentId: processId, timeoutMs: 45000,
+      }, controller.signal, () => { controller.abort(); }, () => { callbacks++; });
+      const result = await Promise.race([
+        starting,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('NATIVE_START_ABORT_STUCK')), 25000)),
+      ]);
+      expect(result.ok).toBe(false);
+      expect(manager.status(processId)).toMatchObject({
+        ok: true, value: { state: 'termination_unverified' },
+      });
+      expect(callbacks).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+    }
+  }, 35000);
+
   it('does not treat a genuine child exit 125 as verified native-host completion', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-native-125-'));
     try {
