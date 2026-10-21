@@ -135,7 +135,7 @@ export class ProcessManager {
     child.once('error', (error: Error & { code?: string }) => this.handleError(record, error));
     child.once('close', (exitCode: number | null) => {
       if (record.nativeReceiptPath === undefined) this.handleClose(record, exitCode);
-      else void this.handleNativeClose(record);
+      else void this.handleNativeClose(record, exitCode);
     });
 
     return new Promise((resolve) => {
@@ -255,10 +255,10 @@ export class ProcessManager {
     if (record.exitCode === undefined && exitCode !== null) record.exitCode = exitCode;
   }
 
-  private async handleNativeClose(record: ManagedRecord): Promise<void> {
+  private async handleNativeClose(record: ManagedRecord, nativeHostExitCode: number | null): Promise<void> {
     if (record.nativeReceiptPath === undefined) return;
     const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
-    if (receipt === undefined) {
+    if (receipt === undefined || nativeHostExitCode === null || receipt.exitCode !== nativeHostExitCode) {
       this.markTerminationUnverified(record, 'Native process Job Object completion is unverified');
       return;
     }
