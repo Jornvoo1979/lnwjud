@@ -62,16 +62,27 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       let callbacks = 0;
       const processId = '229e48e5-571d-4f3b-b33c-f3aafceef108';
       const manager = new ProcessManager(undefined, undefined, undefined, undefined, containedRoot);
+      const ready = path.join(root, 'child-ready');
+      const release = path.join(root, 'release-child');
+      const script = [
+        "const fs = require('node:fs');",
+        "fs.writeFileSync(process.argv[1], 'ready');",
+        "const interval = setInterval(() => { if (fs.existsSync(process.argv[2])) { clearInterval(interval); process.exit(0); } }, 20);",
+      ].join('\n');
       const result = await manager.start({
         executable: process.execPath,
-        args: ['-e', 'setTimeout(() => process.exit(0), 1800)'],
+        args: ['-e', script, ready, release],
         cwd: root, containmentId: processId, timeoutMs: 20000,
       }, undefined, undefined, (): void => { callbacks++; });
       expect(result).toMatchObject({ ok: true });
       if (!result.ok) return;
+      await expect.poll(async () => {
+        try { return await readFile(ready, 'utf8'); } catch { return ''; }
+      }, { timeout: 10000 }).toBe('ready');
       const temp = path.join(containedRoot, processId, 'containment.receipt.tmp');
-      // The native child is still running; refuse to clobber a precreated receipt path.
+      // The live child cannot exit until the test has created the hostile path.
       await writeFile(temp, 'untrusted-preexisting-data', { flag: 'wx' });
+      await writeFile(release, 'go');
       await expect.poll(() => manager.status(processId).ok
         ? manager.status(processId).value.state : 'unknown', { timeout: 15000 }).toBe('termination_unverified');
       expect(await readFile(temp, 'utf8')).toBe('untrusted-preexisting-data');
