@@ -53,10 +53,9 @@ export async function prepareWindowsContainedLaunch(input: {
   if (process.platform !== 'win32') throw new Error('WINDOWS_CONTAINMENT_UNSUPPORTED');
   if (![input.directory, input.executable, input.cwd].every((value) => path.isAbsolute(value))) throw new Error('WINDOWS_CONTAINMENT_ABSOLUTE_PATH_REQUIRED');
   if (!verifyWindowsNativeContainmentExecutable(input.nativeHost)) throw new Error('WINDOWS_NATIVE_CONTAINMENT_IDENTITY_UNVERIFIED');
-  // Atomic exclusive creation: an existing directory is never reused, even if empty.
-  // Provision the parent for desktop flows, while exclusive creation of the per-invocation directory prevents reuse.
-  await mkdir(path.dirname(input.directory), { recursive: true, mode: 0o700 });
-  await mkdir(input.directory, { mode: 0o700 });
+  // Desktop-managed containment directories may be pre-provisioned.
+  // The exclusive containment.json write below prevents reusing a completed specification.
+  await mkdir(input.directory, { recursive: true, mode: 0o700 });
   const specPath = path.join(input.directory, 'containment.json');
   const receiptPath = path.join(input.directory, 'containment.receipt.json');
   const cancelPath = path.join(input.directory, 'containment.cancel');
