@@ -316,10 +316,13 @@ export class ProcessManager {
       const deadline = Date.now() + 12000;
       while (Date.now() < deadline) {
         const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
-        if (receipt !== undefined) {
+        // A receipt file alone cannot verify cancellation. Wait until the actual
+        // Native Host exits and confirm its OS-observed exit code matches the receipt.
+        if (nativeReceiptMatchesHostExit(receipt, record.child.exitCode)) {
           this.acceptNativeReceipt(record, receipt);
           return true;
         }
+        if (isVerifiedTerminal(record.state)) return true;
         await delay(100);
       }
       this.markTerminationUnverified(record, 'Native Job Object termination receipt is unavailable');
