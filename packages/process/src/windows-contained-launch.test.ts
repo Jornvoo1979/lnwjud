@@ -1,27 +1,34 @@
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { prepareWindowsContainedLaunch, readWindowsContainmentReceipt } from './windows-contained-launch.js';
 
 describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => {
-  it.each(['completed', 'cancelled'] as const)('publishes verified %s receipt and forwards child output', async (outcome) => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud job receipt '));
+  it('prepares only the integrity-bound native host and refuses receipt downgrade', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud native containment prep '));
     try {
+      const hostDir = path.join(root, 'host');
+      await mkdir(hostDir);
+      const host = path.join(hostDir, 'lnwjud-windows-host.exe');
+      const bytes = Buffer.from('fixture-native-host');
+      await writeFile(host, bytes);
+      const sha256 = (await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');
+      await writeFile(path.join(hostDir, 'NATIVE_HOST.json'), JSON.stringify({
+        schemaVersion: 1, name: 'lnwjud-windows-host.exe', platform: 'win32', arch: 'x64',
+        sha256, sizeBytes: bytes.byteLength, verified: true,
+      }));
       const invocation = await prepareWindowsContainedLaunch({
-        directory: root, executable: process.execPath, cwd: root, timeoutMs: 10000,
-        args: ['-e', outcome === 'completed' ? 'console.log("CHILD_OUTPUT")' : 'console.log("CHILD_OUTPUT");setInterval(()=>{},1000)'],
+        directory: path.join(root, 'task'), executable: process.execPath, cwd: root, timeoutMs: 10000,
+        args: ['--version'],
+        nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
       });
-      const child = spawn(invocation.executable, [...invocation.args], { windowsHide: true });
-      const closed = once(child, 'close');
-      let stdout = '';
-      child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
-      if (outcome === 'cancelled') await writeFile(invocation.cancelPath, 'cancel');
-      await closed;
-      expect(await readWindowsContainmentReceipt(invocation.receiptPath)).toMatchObject({ kind: 'windows_job_v1', outcome, activeProcesses: 0 });
-      if (outcome === 'completed') expect(stdout).toContain('CHILD_OUTPUT');
+      expect(invocation.executable).toBe(host);
+      expect(invocation.args[0]).toBe('--contained-process');
+      expect(invocation.args).toHaveLength(3);
+      expect(invocation.receiptKind).toBe('windows_native_process_v1');
+      await writeFile(invocation.receiptPath, JSON.stringify({ kind: 'windows_job_v1', outcome: 'completed', exitCode: 0, activeProcesses: 0 }));
+      expect(await readWindowsContainmentReceipt(invocation.receiptPath, invocation.receiptKind)).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
-  }, 20000);
+  });
 });

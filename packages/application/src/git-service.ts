@@ -134,6 +134,7 @@ export class GitService {
       workspaceId: request.workspaceId ?? 'unscoped-git',
       kind: 'contained_process',
       nativeReceiptPath: receiptPath,
+      nativeReceiptKind: 'windows_native_process_v1',
     });
     if (!admission.ok) return admission;
     // Only a zero-active native Windows Job receipt authorizes release.

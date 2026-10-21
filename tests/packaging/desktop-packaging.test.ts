@@ -200,9 +200,17 @@ describe('cross-platform desktop packaging', () => {
     expect(config).toContain('to: native-host/macos');
     expect(config).toContain('from: build/native-host/linux');
     expect(config).toContain('to: native-host/linux');
+    expect(config).toContain('from: build/native-host/windows/x64');
+    expect(config).toContain('to: native-host/windows/x64');
     await access(path.join(repositoryRoot, '.agents', 'skills', 'lnwjud-scheduled-continuation', 'SKILL.md'));
     expect(desktopPackage.scripts?.['package:windows']).toContain('prepare-runtime-tools.mjs');
     expect(desktopPackage.scripts?.['package:windows']).toContain('prepare-tunnel-client.mjs');
+    expect(desktopPackage.scripts?.['package:windows']).toContain('build-windows-host.mjs');
+    const windowsHostBuildScript = await readFile(path.join(desktopRoot, 'scripts', 'build-windows-host.mjs'), 'utf8');
+    expect(windowsHostBuildScript).toContain("'dotnet'");
+    expect(windowsHostBuildScript).toContain("'lnwjud-windows-host.exe'");
+    expect(windowsHostBuildScript).not.toContain('ExecutionPolicy');
+    expect(await readFile(path.join(repositoryRoot, 'native', 'windows-host', 'lnwjud-windows-host.csproj'), 'utf8')).toContain('<TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>');
     expect(desktopPackage.scripts?.['package:macos']).toContain('package-native.mjs macos');
     expect(desktopPackage.scripts?.['package:linux']).toContain('package-native.mjs linux');
     const nativePackagingScript = await readFile(path.join(desktopRoot, 'scripts', 'package-native.mjs'), 'utf8');

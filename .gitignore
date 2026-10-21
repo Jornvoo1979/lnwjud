@@ -19,6 +19,8 @@ native/windows-secret-migrator/bin/
 native/windows-secret-migrator/obj/
 native/windows-ocr/bin/
 native/windows-ocr/obj/
+native/windows-host/bin/
+native/windows-host/obj/
 *.tsbuildinfo
 *.tsbuildinfo.*
 *.last-run.json

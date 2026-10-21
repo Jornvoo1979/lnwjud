@@ -59,6 +59,7 @@ export { NodeBrowserCdpProtocol } from './browser-cdp-protocol.js';
 export { NativeHostProcessBridge, type NativeHostProtocolOptions, type NativeHostSpawner } from './native-host-protocol.js';
 export { MacosProcessBridge, type MacosProcessBridgeOptions, type MacOSProcessBridge, unavailableMacosHost } from './macos-process-bridge.js';
 export { LinuxProcessBridge, type LinuxProcessBridgeOptions, type LinuxNativeOperationAuthorization, unavailableLinuxHost } from './linux-process-bridge.js';
+export { WindowsProcessBridge, type WindowsProcessBridgeOptions, type WindowsNativeOperationAuthorization, unavailableWindowsHost } from './windows-process-bridge.js';
 export { NativeCapabilityBackend, type NativeCapabilityBackendOptions, type PortableNativeCapabilityName } from './native-capability-backend.js';
 export { nativeCapabilityActions, isNativeCapabilityAction } from './native-capability-contract.js';
 export { MacosNativeCapabilityBackend, type MacosNativeBackendOptions } from './macos-native-backend.js';

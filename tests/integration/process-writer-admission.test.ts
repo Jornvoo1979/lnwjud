@@ -6,8 +6,9 @@ import { SharedManagedWriterAdmission } from '../../packages/capabilities/src/sh
 import { DurableShellTaskStore } from '../../packages/capabilities/src/durable-shell-task-store.js';
 import type { Workspace, WorkspaceRepository } from '@lnwjud/workspace';
 import { ProcessService } from '@lnwjud/application';
+import { resolvePackagedWindowsNativeContainmentExecutable } from '@lnwjud/process';
 
-describe.skipIf(process.platform !== 'win32')('cross-workspace native ProcessService writer lifetime', () => {
+describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeContainmentExecutable() === undefined)('cross-workspace native ProcessService writer lifetime', () => {
   it('blocks repository import while a detached process descendant still holds the native Job', async () => {
     const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-writer-lifetime-')));
     const workspaceRoot = path.join(root, 'project');

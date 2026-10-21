@@ -21,7 +21,7 @@ const APP_ERROR_CODES: readonly AppErrorCode[] = [
 ];
 
 export interface NativeHostProtocolOptions {
-  readonly platform: 'darwin' | 'linux';
+  readonly platform: 'win32' | 'darwin' | 'linux';
   readonly executablePath: string;
   readonly expectedSha256?: string;
   readonly expectedSizeBytes?: number;
@@ -259,7 +259,7 @@ function nativeResourceIsTerminal(value: unknown): boolean {
 }
 
 class NativeHostProcessTransport {
-  private readonly platform: 'darwin' | 'linux';
+  private readonly platform: 'win32' | 'darwin' | 'linux';
   private readonly executablePath: string;
   private readonly expectedSha256: string | undefined;
   private readonly expectedSizeBytes: number | undefined;

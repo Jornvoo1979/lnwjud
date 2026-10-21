@@ -43,13 +43,15 @@ describe('Windows release trust evidence', () => {
     expect(evidenceVerifier).toContain('const releaseArtifactOnly');
     expect(evidenceVerifier).toContain('verifyCapabilityBridgeArtifacts');
     expect(bridgeVerifier).toContain('packaged bridge bytes differ from staged package bytes');
-    for (const name of ['lnwjud-mcp-stdio.cmd', 'windows-capability-bridge.ps1', 'windows-capability-bridge.sha256', 'windows-capability-bridge.integrity.json', 'windows-secret-migrator.exe', 'windows-secret-migrator.sha256', 'rg.exe', 'tunnel-client.exe']) {
+    for (const name of ['lnwjud-mcp-stdio.cmd', 'windows-capability-bridge.ps1', 'windows-capability-bridge.sha256', 'windows-capability-bridge.integrity.json', 'windows-secret-migrator.exe', 'windows-secret-migrator.sha256', 'lnwjud-windows-host.exe', 'native-host-manifest', 'rg.exe', 'tunnel-client.exe']) {
       expect(captureHook).toContain(name);
     }
     expect(captureHook).not.toContain('lnwjud-mcp-stdio.cjs');
     expect(captureHook).not.toContain('lnwjud-node.exe');
     expect(evidenceWriter).toContain('runtimeEvidence.platform');
     expect(evidenceVerifier).toContain('expectedArtifactNames');
+    expect(evidenceVerifier).toContain('resources/native-host/windows/${arch}/lnwjud-windows-host.exe');
+    expect(evidenceVerifier).toContain('resources/native-host/windows/${arch}/NATIVE_HOST.json');
     expect(captureHook).toContain('lstat');
     expect(captureHook).toContain('realpath(filePath)');
     expect(evidenceWriter).toContain('lstat');

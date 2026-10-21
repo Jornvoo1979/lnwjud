@@ -8,11 +8,18 @@ export function resolveNativeHostBridge(options: {
   readonly arch: string;
   readonly executablePaths: readonly string[];
 }): NativeHostProcessBridge | undefined {
-  if ((options.platform !== 'darwin' && options.platform !== 'linux') || !['x64', 'arm64'].includes(options.arch)) return undefined;
+  const platform = options.platform;
+  if (platform !== 'win32' && platform !== 'darwin' && platform !== 'linux') return undefined;
+  const supported = platform === 'win32'
+    ? options.arch === 'x64'
+    : ['x64', 'arm64'].includes(options.arch);
+  if (!supported) return undefined;
   const executable = options.executablePaths.find((candidate) => existsSync(candidate));
   if (executable === undefined || !path.isAbsolute(executable)) return undefined;
   const manifestPath = path.join(path.dirname(executable), 'NATIVE_HOST.json');
-  const expectedName = options.platform === 'darwin' ? 'lnwjud-macos-host' : 'lnwjud-linux-host';
+  const expectedName = platform === 'win32'
+    ? 'lnwjud-windows-host.exe'
+    : platform === 'darwin' ? 'lnwjud-macos-host' : 'lnwjud-linux-host';
   try {
     const executableStat = lstatSync(executable);
     const manifestStat = lstatSync(manifestPath);
@@ -21,11 +28,11 @@ export function resolveNativeHostBridge(options: {
     const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf8'));
     if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest)) return undefined;
     const identity = manifest as Record<string, unknown>;
-    if (identity.schemaVersion !== 1 || identity.platform !== options.platform || identity.arch !== options.arch || identity.name !== expectedName || path.basename(executable) !== expectedName
+    if (identity.schemaVersion !== 1 || identity.platform !== platform || identity.arch !== options.arch || identity.name !== expectedName || path.basename(executable) !== expectedName
       || identity.verified !== true || typeof identity.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(identity.sha256)
       || typeof identity.sizeBytes !== 'number' || !Number.isSafeInteger(identity.sizeBytes) || identity.sizeBytes <= 0 || identity.sizeBytes !== executableStat.size) return undefined;
-    return new NativeHostProcessBridge({ platform: options.platform, executablePath: executable, expectedSha256: identity.sha256,
-      expectedSizeBytes: identity.sizeBytes, requireIntegrity: true, terminator: createProcessTreeTerminator(options.platform) });
+    return new NativeHostProcessBridge({ platform, executablePath: executable, expectedSha256: identity.sha256,
+      expectedSizeBytes: identity.sizeBytes, requireIntegrity: true, terminator: createProcessTreeTerminator(platform) });
   } catch {
     return undefined;
   }

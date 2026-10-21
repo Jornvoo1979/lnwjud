@@ -88,7 +88,7 @@ describe('NativeHostProcessBridge', () => {
     await expect(request).resolves.toMatchObject({ ok: false, error: { code: 'PROCESS_TIMEOUT' } });
     await bridge.close();
   });
-  it.each(['darwin', 'linux'] as const)('preserves split UTF-8 responses on %s', async (platform) => {
+  it.each(['win32', 'darwin', 'linux'] as const)('preserves split UTF-8 responses on %s', async (platform) => {
     const bridge = new NativeHostProcessBridge({
       platform,
       executablePath: '/opt/lnwjud-native-host',

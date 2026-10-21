@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { resolveNativeHostBridge } from './native-host-resolver.js';
 
 const directories: string[] = [];
-async function packaged(overrides: Record<string, unknown> = {}): Promise<{ root: string; executable: string }> {
+async function packaged(overrides: Record<string, unknown> = {}, platform: 'linux' | 'win32' = 'linux'): Promise<{ root: string; executable: string }> {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-native-manifest-')));
   directories.push(root);
-  const executable = path.join(root, 'lnwjud-linux-host');
+  const executable = path.join(root, platform === 'win32' ? 'lnwjud-windows-host.exe' : 'lnwjud-linux-host');
   const content = Buffer.from('fixture helper identity\n');
   await writeFile(executable, content);
-  await writeFile(path.join(root, 'NATIVE_HOST.json'), JSON.stringify({ schemaVersion: 1, platform: 'linux', arch: 'x64', name: path.basename(executable),
+  await writeFile(path.join(root, 'NATIVE_HOST.json'), JSON.stringify({ schemaVersion: 1, platform, arch: 'x64', name: path.basename(executable),
     sha256: createHash('sha256').update(content).digest('hex'), sizeBytes: content.byteLength, verified: true, ...overrides }));
   return { root, executable };
 }
@@ -32,6 +32,13 @@ describe('packaged native host resolution', () => {
   it.each([{ platform: 'darwin' }, { arch: 'arm64' }, { name: 'another-helper' }, { verified: false }, { sha256: 'bad' }, { sizeBytes: 0 }])('refuses a mismatched identity %j', async (overrides) => {
     const { executable } = await packaged(overrides);
     expect(resolveNativeHostBridge({ platform: 'linux', arch: 'x64', executablePaths: [executable] })).toBeUndefined();
+  });
+  it('resolves the Windows x64 native host with the same integrity contract', async () => {
+    const { executable } = await packaged({}, 'win32');
+    const bridge = resolveNativeHostBridge({ platform: 'win32', arch: 'x64', executablePaths: [executable] });
+    expect(bridge).toBeDefined();
+    await expect(bridge!.close()).resolves.toMatchObject({ ok: true });
+    expect(resolveNativeHostBridge({ platform: 'win32', arch: 'arm64', executablePaths: [executable] })).toBeUndefined();
   });
   it('does not bypass an invalid first existing candidate with a later valid candidate', async () => {
     const first = await packaged({ verified: false });
