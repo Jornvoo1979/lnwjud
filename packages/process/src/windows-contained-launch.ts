@@ -114,7 +114,11 @@ export async function readWindowsContainmentReceipt(
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
     const item = parsed as Record<string, unknown>;
     if (expectedKind !== undefined && item.kind !== expectedKind) return undefined;
+    // Legacy PowerShell receipts have no process-instance/Job attestation. Never
+    // infer permission to accept them from an omitted expected kind: callers
+    // must explicitly opt into that legacy schema (native callers never do).
     if (item.kind === 'windows_job_v1') {
+      if (expectedKind !== 'windows_job_v1') return undefined;
       if (item.activeProcesses !== 0
         || (item.outcome !== 'completed' && item.outcome !== 'cancelled' && item.outcome !== 'timed_out')
         || typeof item.exitCode !== 'number' || !Number.isInteger(item.exitCode)) return undefined;
