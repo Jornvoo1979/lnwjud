@@ -172,7 +172,15 @@ internal static class Program
             }, JsonOptions);
             var temporary = Path.Combine(directory, "containment.receipt.tmp");
             var receiptPath = Path.Combine(directory, "containment.receipt.json");
-            File.WriteAllText(temporary, receipt, new UTF8Encoding(false));
+            // Fail closed if an attacker or stale run pre-created the temporary file.
+            // A new exclusive file prevents overwriting an existing reparse-point target.
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                       4096, FileOptions.WriteThrough))
+            {
+                var receiptBytes = new UTF8Encoding(false).GetBytes(receipt);
+                stream.Write(receiptBytes);
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temporary, receiptPath);
             return exitCode;
         }
