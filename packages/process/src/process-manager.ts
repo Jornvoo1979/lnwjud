@@ -244,6 +244,13 @@ export class ProcessManager {
     // misreported as successful cancellation. Keep ownership fenced until an
     // independently authenticated native termination is observed.
     if (!verified) {
+      // Preserve the original non-native process-tree stop contract: existing
+      // callers wait until a trusted tree terminator independently verifies exit.
+      if (record.nativeReceiptPath === undefined) {
+        await this.waitForVerifiedTermination(record);
+        return ok(undefined);
+      }
+      // Native disk receipts are not authenticated; do not release their owner.
       return err(appError('CONFLICT', 'Process termination remains unverified; ownership retained', true));
     }
     return ok(undefined);
