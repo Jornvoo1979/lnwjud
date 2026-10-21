@@ -124,6 +124,10 @@ export async function readWindowsContainmentReceipt(
         || typeof item.exitCode !== 'number' || !Number.isInteger(item.exitCode)) return undefined;
       return { kind: 'windows_job_v1', activeProcesses: 0, outcome: item.outcome, exitCode: item.exitCode };
     }
+    // Native receipt JSON is caller-writable and does not authenticate its producer.
+    // Fail closed until independently verified Windows IPC attestation exists.
+    // Even matching PID, Job metadata and digest are insufficient proof.
+    if (item.kind === 'windows_native_process_v1') return undefined;
     // Never admit native evidence unless the caller explicitly requests that
     // receipt schema. This is type admission only, not producer authentication.
     if (expectedKind !== 'windows_native_process_v1'
