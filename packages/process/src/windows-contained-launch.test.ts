@@ -27,6 +27,12 @@ describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => 
       expect(invocation.args[0]).toBe('--contained-process');
       expect(invocation.args).toHaveLength(3);
       expect(invocation.receiptKind).toBe('windows_native_process_v1');
+      // A second use of the same invocation directory must fail closed.
+      await expect(prepareWindowsContainedLaunch({
+        directory: path.join(root, 'task'), executable: process.execPath, cwd: root, timeoutMs: 10000,
+        args: ['--version'],
+        nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
+      })).rejects.toThrow('WINDOWS_CONTAINMENT_DIRECTORY_NOT_EMPTY');
       await writeFile(invocation.receiptPath, JSON.stringify({ kind: 'windows_job_v1', outcome: 'completed', exitCode: 0, activeProcesses: 0 }));
       expect(await readWindowsContainmentReceipt(invocation.receiptPath, invocation.receiptKind)).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
