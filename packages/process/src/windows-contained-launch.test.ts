@@ -109,6 +109,8 @@ describe('native receipt spec correlation', () => {
         assignedBeforeResume: true, killOnJobClose: true,
         jobIdentity: '0123456789abcdef0123456789abcdef', specDigest,
       }));
+      expect(await readWindowsContainmentReceipt(filename)).toBeUndefined();
+      expect(await readWindowsContainmentReceipt(filename, undefined, specDigest)).toBeUndefined();
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1')).toBeUndefined();
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'b'.repeat(64))).toBeUndefined();
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', specDigest)).toMatchObject({ specDigest });
