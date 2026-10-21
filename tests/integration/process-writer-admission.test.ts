@@ -56,7 +56,7 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       // The descendant writing the sentinel is not an authenticated terminal
       // receipt for the native Job or proof that the writer lease can be freed.
       // While trusted producer authentication is unavailable, fail closed.
-      await expect.poll(() => {
+      await expect.poll(async () => {
         const status = await processes.status(actor, workspace.id, started.value.processId);
         if (!status.ok) throw new Error(`Native process status probe failed: ${status.error.code}: ${status.error.message}`);
         return status.value.state;
