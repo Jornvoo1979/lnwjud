@@ -143,18 +143,9 @@ export async function readWindowsContainmentReceipt(
       || typeof item.jobIdentity !== 'string' || !/^[0-9a-f]{32}$/i.test(item.jobIdentity)
       || typeof expectedSpecDigest !== 'string' || !/^[0-9a-f]{64}$/.test(expectedSpecDigest)
       || item.specDigest !== expectedSpecDigest) return undefined;
-    return {
-      kind: 'windows_native_process_v1',
-      outcome: item.outcome,
-      exitCode: item.exitCode,
-      activeProcesses: 0,
-      pid: item.pid,
-      processCreationTime: item.processCreationTime,
-      restrictedToken: true,
-      assignedBeforeResume: true,
-      killOnJobClose: true,
-      jobIdentity: item.jobIdentity,
-      specDigest: expectedSpecDigest,
-    };
+    // A matching on-disk JSON schema is correlation only, never proof of
+    // producer identity. The native receipt reader must fail closed until
+    // an independent Windows OS-backed attestation is integrated.
+    return undefined;
   } catch { return undefined; }
 }
