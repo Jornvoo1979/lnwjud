@@ -160,6 +160,7 @@ describe('native host exit correlation', () => {
     expect(nativeReceiptMatchesHostExit(undefined, 0)).toBe(false);
     expect(nativeReceiptMatchesHostExit(receipt, null)).toBe(false);
     expect(nativeReceiptMatchesHostExit(receipt, 125)).toBe(false);
+    expect(nativeReceiptMatchesHostExit({ ...receipt, exitCode: 125 }, 125)).toBe(false);
   });
   it('accepts only an equal known host exit code as a correlation check', () => {
     expect(nativeReceiptMatchesHostExit(receipt, 0)).toBe(true);
