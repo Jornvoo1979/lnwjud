@@ -23,6 +23,14 @@ describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => 
         args: ['--version'],
         nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
       });
+      // Even a pre-existing *empty* directory is a reused identity and must be rejected.
+      const emptyExisting = path.join(root, 'empty-existing-task');
+      await mkdir(emptyExisting);
+      await expect(prepareWindowsContainedLaunch({
+        directory: emptyExisting, executable: process.execPath, cwd: root, timeoutMs: 10000,
+        args: ['--version'],
+        nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
+      })).rejects.toMatchObject({ code: 'EEXIST' });
       expect(invocation.executable).toBe(host);
       expect(invocation.args[0]).toBe('--contained-process');
       expect(invocation.args).toHaveLength(3);
