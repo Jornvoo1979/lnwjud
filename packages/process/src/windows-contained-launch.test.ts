@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -76,6 +76,31 @@ describe('native receipt spec correlation', () => {
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1')).toBeUndefined();
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'b'.repeat(64))).toBeUndefined();
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', specDigest)).toMatchObject({ specDigest });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+describe('native receipt file admission', () => {
+  it('refuses oversized receipts before JSON parsing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-receipt-size-'));
+    try {
+      const filename = path.join(root, 'containment.receipt.json');
+      await writeFile(filename, ' '.repeat(16 * 1024 + 1));
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'a'.repeat(64))).toBeUndefined();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('refuses a symlink to a receipt on platforms supporting O_NOFOLLOW', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-receipt-link-'));
+    try {
+      const target = path.join(root, 'target.json');
+      const filename = path.join(root, 'containment.receipt.json');
+      await writeFile(target, '{}');
+      try { await symlink(target, filename, 'file'); } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && (error.code === 'EPERM' || error.code === 'EACCES')) return;
+        throw error;
+      }
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'a'.repeat(64))).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
