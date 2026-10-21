@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import {
   verifyWindowsNativeContainmentExecutable,
@@ -14,6 +15,7 @@ export interface WindowsContainedLaunch {
   readonly receiptPath: string;
   readonly cancelPath: string;
   readonly receiptKind: 'windows_native_process_v1';
+  readonly specDigest: string;
 }
 
 export interface LegacyWindowsContainmentReceipt {
@@ -34,6 +36,7 @@ export interface WindowsNativeProcessReceipt {
   readonly assignedBeforeResume: true;
   readonly killOnJobClose: true;
   readonly jobIdentity: string;
+  readonly specDigest: string;
 }
 
 export type WindowsContainmentReceipt = LegacyWindowsContainmentReceipt | WindowsNativeProcessReceipt;
@@ -50,10 +53,16 @@ export async function prepareWindowsContainedLaunch(input: {
   if (process.platform !== 'win32') throw new Error('WINDOWS_CONTAINMENT_UNSUPPORTED');
   if (![input.directory, input.executable, input.cwd].every((value) => path.isAbsolute(value))) throw new Error('WINDOWS_CONTAINMENT_ABSOLUTE_PATH_REQUIRED');
   if (!verifyWindowsNativeContainmentExecutable(input.nativeHost)) throw new Error('WINDOWS_NATIVE_CONTAINMENT_IDENTITY_UNVERIFIED');
+  // Desktop-managed containment directories may be pre-provisioned.
+  // The exclusive containment.json write below prevents reusing a completed specification.
   await mkdir(input.directory, { recursive: true, mode: 0o700 });
   const specPath = path.join(input.directory, 'containment.json');
   const receiptPath = path.join(input.directory, 'containment.receipt.json');
   const cancelPath = path.join(input.directory, 'containment.cancel');
+  // A pre-provisioned directory is permitted; stale terminal/cancel artifacts are not.
+  const existing = await readdir(input.directory);
+  if (existing.includes('containment.receipt.json') || existing.includes('containment.receipt.tmp')
+    || existing.includes('containment.cancel')) throw new Error('WINDOWS_CONTAINMENT_STALE_ARTIFACT');
   const spec = JSON.stringify({
     version: 2,
     executable: input.executable,
@@ -71,25 +80,58 @@ export async function prepareWindowsContainedLaunch(input: {
     receiptPath,
     cancelPath,
     receiptKind: 'windows_native_process_v1',
+    specDigest: digest,
   };
 }
 
 export async function readWindowsContainmentReceipt(
   filename: string,
   expectedKind?: WindowsContainmentReceiptKind,
+  expectedSpecDigest?: string,
 ): Promise<WindowsContainmentReceipt | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(filename, 'utf8'));
+    // Reject symlinks and oversized receipts before parsing attacker-controlled content.
+    // A verified task/lease attestation is still required for producer authentication.
+    const entry = await lstat(filename);
+    if (!entry.isFile() || entry.isSymbolicLink()) return undefined;
+    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
+    const file = await open(filename, flags);
+    let content: string;
+    try {
+      const before = await file.stat();
+      if (!before.isFile() || before.size > 16 * 1024
+        || before.dev !== entry.dev || before.ino !== entry.ino) return undefined;
+      const bytes = Buffer.alloc(16 * 1024 + 1);
+      const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+      if (bytesRead > 16 * 1024) return undefined;
+      const after = await file.stat();
+      if (!after.isFile() || after.size !== before.size || after.mtimeMs !== before.mtimeMs || bytesRead !== before.size) return undefined;
+      content = bytes.toString('utf8', 0, bytesRead);
+    } finally {
+      await file.close();
+    }
+    const parsed: unknown = JSON.parse(content);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
     const item = parsed as Record<string, unknown>;
     if (expectedKind !== undefined && item.kind !== expectedKind) return undefined;
+    // Legacy PowerShell receipts have no process-instance/Job attestation. Never
+    // infer permission to accept them from an omitted expected kind: callers
+    // must explicitly opt into that legacy schema (native callers never do).
     if (item.kind === 'windows_job_v1') {
+      if (expectedKind !== 'windows_job_v1') return undefined;
       if (item.activeProcesses !== 0
         || (item.outcome !== 'completed' && item.outcome !== 'cancelled' && item.outcome !== 'timed_out')
         || typeof item.exitCode !== 'number' || !Number.isInteger(item.exitCode)) return undefined;
       return { kind: 'windows_job_v1', activeProcesses: 0, outcome: item.outcome, exitCode: item.exitCode };
     }
-    if (item.kind !== 'windows_native_process_v1'
+    // Native receipt JSON is caller-writable and does not authenticate its producer.
+    // Fail closed until independently verified Windows IPC attestation exists.
+    // Even matching PID, Job metadata and digest are insufficient proof.
+    if (item.kind === 'windows_native_process_v1') return undefined;
+    // Never admit native evidence unless the caller explicitly requests that
+    // receipt schema. This is type admission only, not producer authentication.
+    if (expectedKind !== 'windows_native_process_v1'
+      || item.kind !== 'windows_native_process_v1'
       || item.activeProcesses !== 0
       || (item.outcome !== 'completed' && item.outcome !== 'cancelled' && item.outcome !== 'timed_out')
       || typeof item.exitCode !== 'number' || !Number.isInteger(item.exitCode)
@@ -98,18 +140,12 @@ export async function readWindowsContainmentReceipt(
       || item.restrictedToken !== true
       || item.assignedBeforeResume !== true
       || item.killOnJobClose !== true
-      || typeof item.jobIdentity !== 'string' || !/^[0-9a-f]{32}$/i.test(item.jobIdentity)) return undefined;
-    return {
-      kind: 'windows_native_process_v1',
-      outcome: item.outcome,
-      exitCode: item.exitCode,
-      activeProcesses: 0,
-      pid: item.pid,
-      processCreationTime: item.processCreationTime,
-      restrictedToken: true,
-      assignedBeforeResume: true,
-      killOnJobClose: true,
-      jobIdentity: item.jobIdentity,
-    };
+      || typeof item.jobIdentity !== 'string' || !/^[0-9a-f]{32}$/i.test(item.jobIdentity)
+      || typeof expectedSpecDigest !== 'string' || !/^[0-9a-f]{64}$/.test(expectedSpecDigest)
+      || item.specDigest !== expectedSpecDigest) return undefined;
+    // A matching on-disk JSON schema is correlation only, never proof of
+    // producer identity. The native receipt reader must fail closed until
+    // an independent Windows OS-backed attestation is integrated.
+    return undefined;
   } catch { return undefined; }
 }

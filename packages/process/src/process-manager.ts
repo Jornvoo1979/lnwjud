@@ -28,8 +28,10 @@ interface ManagedRecord {
   readonly nativeReceiptPath?: string;
   readonly nativeCancelPath?: string;
   readonly nativeReceiptKind?: WindowsContainmentReceiptKind;
+  readonly nativeSpecDigest?: string;
   readonly onVerifiedNativeTermination?: () => void;
   nativeTerminationNotified?: boolean;
+  nativeHostClosed?: boolean;
   state: ManagedProcessState;
   finishedAt?: string;
   exitCode?: number;
@@ -40,6 +42,21 @@ interface ManagedRecord {
   terminationTarget?: 'stopped' | 'timed_out';
   terminationVerified?: Promise<void>;
   resolveTerminationVerified?: () => void;
+}
+
+export function nativeReceiptMatchesHostExit(receipt: WindowsContainmentReceipt | undefined, nativeHostExitCode: number | null): receipt is WindowsContainmentReceipt {
+  // Exit status 125 is reserved by Windows Native Host for containment failures.
+  // A forged receipt matching that error status must never release a writer.
+  return receipt !== undefined && nativeHostExitCode !== null && nativeHostExitCode !== 125
+    && receipt.exitCode === nativeHostExitCode;
+}
+
+export function nativeReceiptMatchesClosedHost(
+  receipt: WindowsContainmentReceipt | undefined,
+  nativeHostExitCode: number | null,
+  nativeHostClosed: boolean,
+): receipt is WindowsContainmentReceipt {
+  return nativeHostClosed && nativeReceiptMatchesHostExit(receipt, nativeHostExitCode);
 }
 
 export class ProcessManager {
@@ -122,6 +139,7 @@ export class ProcessManager {
         nativeReceiptPath: contained.receiptPath,
         nativeCancelPath: contained.cancelPath,
         nativeReceiptKind: contained.receiptKind,
+        nativeSpecDigest: contained.specDigest,
       }),
       ...(onVerifiedNativeTermination === undefined ? {} : { onVerifiedNativeTermination }),
       state: 'starting',
@@ -132,8 +150,9 @@ export class ProcessManager {
     child.stderr?.on('data', (chunk: Buffer) => record.logs.append('stderr', chunk.toString('utf8')));
     child.once('error', (error: Error & { code?: string }) => this.handleError(record, error));
     child.once('close', (exitCode: number | null) => {
+      record.nativeHostClosed = true;
       if (record.nativeReceiptPath === undefined) this.handleClose(record, exitCode);
-      else void this.handleNativeClose(record);
+      else void this.handleNativeClose(record, exitCode);
     });
 
     return new Promise((resolve) => {
@@ -157,6 +176,13 @@ export class ProcessManager {
           let verified = false;
           while (!verified) {
             verified = await this.tryTerminate(record, 'stopped');
+            if (!verified && record.nativeReceiptKind === 'windows_native_process_v1') {
+              // Once spawned, a native host without authenticated terminal proof
+              // must retain ownership. Do not leave the start cancellation Promise
+              // unresolved forever or incorrectly report verified cancellation.
+              settle(err(appError('CONFLICT', 'Native start cancellation remains unverified; ownership retained', true)));
+              return;
+            }
             if (!verified) {
               if (!isChildLive(record.child)) await this.waitForVerifiedTermination(record);
               await delay(START_CANCELLATION_RETRY_MS);
@@ -213,11 +239,27 @@ export class ProcessManager {
     if (record.state !== 'termination_unverified' && isTerminal(record.state)) return ok(undefined);
     const targetState = record.terminationTarget ?? 'stopped';
     let verified = await this.tryTerminate(record, targetState);
-    while (!verified && autoRetry && isChildLive(record.child)) {
-      await delay(START_CANCELLATION_RETRY_MS);
+    // Auto-retry is bounded: an unverified native receipt cannot keep the
+    // caller waiting indefinitely or grant ownership release by repetition.
+    const retryDeadline = Date.now() + 5_000;
+    while (!verified && autoRetry && isChildLive(record.child) && Date.now() < retryDeadline) {
+      await delay(Math.min(START_CANCELLATION_RETRY_MS, Math.max(0, retryDeadline - Date.now())));
+      if (Date.now() >= retryDeadline) break;
       verified = await this.tryTerminate(record, targetState);
     }
-    if (!verified) await this.waitForVerifiedTermination(record);
+    // A pending terminal proof must not hang the caller indefinitely or be
+    // misreported as successful cancellation. Keep ownership fenced until an
+    // independently authenticated native termination is observed.
+    if (!verified) {
+      // Preserve the original non-native process-tree stop contract: existing
+      // callers wait until a trusted tree terminator independently verifies exit.
+      if (record.nativeReceiptPath === undefined) {
+        await this.waitForVerifiedTermination(record);
+        return ok(undefined);
+      }
+      // Native disk receipts are not authenticated; do not release their owner.
+      return err(appError('CONFLICT', 'Process termination remains unverified; ownership retained', true));
+    }
     return ok(undefined);
   }
 
@@ -253,10 +295,10 @@ export class ProcessManager {
     if (record.exitCode === undefined && exitCode !== null) record.exitCode = exitCode;
   }
 
-  private async handleNativeClose(record: ManagedRecord): Promise<void> {
+  private async handleNativeClose(record: ManagedRecord, nativeHostExitCode: number | null): Promise<void> {
     if (record.nativeReceiptPath === undefined) return;
-    const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind);
-    if (receipt === undefined) {
+    const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
+    if (!nativeReceiptMatchesHostExit(receipt, nativeHostExitCode)) {
       this.markTerminationUnverified(record, 'Native process Job Object completion is unverified');
       return;
     }
@@ -264,6 +306,13 @@ export class ProcessManager {
   }
 
   private acceptNativeReceipt(record: ManagedRecord, receipt: WindowsContainmentReceipt): void {
+    // P0 fail-closed: a disk receipt and host exit-code correlation do not authenticate
+    // the native Job owner. Never acknowledge verified termination or release ownership
+    // until an independently verified OS-backed producer channel is integrated.
+    if (record.nativeReceiptKind === 'windows_native_process_v1') {
+      this.markTerminationUnverified(record, 'Native terminal receipt origin is not independently authenticated');
+      return;
+    }
     if (!isTerminal(record.state)) {
       const state = record.stopRequested === 'timed_out' || receipt.outcome === 'timed_out'
         ? 'timed_out'
@@ -309,11 +358,14 @@ export class ProcessManager {
       }
       const deadline = Date.now() + 12000;
       while (Date.now() < deadline) {
-        const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind);
-        if (receipt !== undefined) {
+        const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
+        // A receipt file alone cannot verify cancellation. Wait until the actual
+        // Native Host exits and confirm its OS-observed exit code matches the receipt.
+        if (nativeReceiptMatchesClosedHost(receipt, record.child.exitCode, record.nativeHostClosed === true)) {
           this.acceptNativeReceipt(record, receipt);
-          return true;
+          return isVerifiedTerminal(record.state);
         }
+        if (isVerifiedTerminal(record.state)) return true;
         await delay(100);
       }
       this.markTerminationUnverified(record, 'Native Job Object termination receipt is unavailable');

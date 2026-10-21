@@ -132,8 +132,13 @@ describe('multi-workspace concurrency acceptance', () => {
         waitForTerminalProcess(clientA, workspaceA.id, processA),
         waitForTerminalProcess(clientB, workspaceB.id, processB),
       ]);
-      expect(terminalA.state).toBe('exited');
-      expect(terminalB.state).toBe('exited');
+      // The native Windows Job path intentionally fails closed until a trusted
+      // producer channel authenticates terminal receipts. This acceptance test
+      // still verifies that both fixtures ran and cross-workspace status is denied.
+      // Do not equate an untrusted receipt with verified process completion.
+      const expectedTerminal = process.platform === 'win32' ? 'termination_unverified' : 'exited';
+      expect(terminalA.state).toBe(expectedTerminal);
+      expect(terminalB.state).toBe(expectedTerminal);
 
       await runtime.services.selectWorkspace({ workspaceId: workspaceA.id });
       const shellA = await clientA.callTool({

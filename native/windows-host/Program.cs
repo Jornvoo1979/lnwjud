@@ -102,7 +102,23 @@ internal static class Program
             if (!Path.IsPathFullyQualified(directory) || !System.Text.RegularExpressions.Regex.IsMatch(expectedSpecDigest, "^[0-9a-f]{64}$"))
                 return 64;
             var specPath = Path.Combine(directory, "containment.json");
-            var bytes = File.ReadAllBytes(specPath);
+            // The launch directory can be influenced by a local writer. Bound the
+            // spec before allocation and reject Windows reparse-point redirects.
+            // This is input hardening, not native receipt producer authentication.
+            var specInfo = new FileInfo(specPath);
+            if (!specInfo.Exists || specInfo.Length <= 0 || specInfo.Length > MaxInputBytes
+                || (specInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_UNTRUSTED_FILE");
+            // Deny concurrent write/delete opens during verification and parsing.
+            // This does not eliminate a reparse swap before open or authenticate the receipt.
+            using var specStream = new FileStream(specPath, FileMode.Open, FileAccess.Read, FileShare.None,
+                4096, FileOptions.SequentialScan);
+            if (specStream.Length <= 0 || specStream.Length > MaxInputBytes)
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_TOO_LARGE");
+            var bytes = new byte[(int)specStream.Length];
+            specStream.ReadExactly(bytes);
+            if (specStream.Length != bytes.Length)
+                throw new IOException("WINDOWS_CONTAINMENT_SPEC_CHANGED");
             var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
             if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(digest), Encoding.ASCII.GetBytes(expectedSpecDigest)))
@@ -168,10 +184,19 @@ internal static class Program
                 assignedBeforeResume = true,
                 killOnJobClose = true,
                 jobIdentity = child.JobIdentity,
+                specDigest = digest,
             }, JsonOptions);
             var temporary = Path.Combine(directory, "containment.receipt.tmp");
             var receiptPath = Path.Combine(directory, "containment.receipt.json");
-            File.WriteAllText(temporary, receipt, new UTF8Encoding(false));
+            // Fail closed if an attacker or stale run pre-created the temporary file.
+            // A new exclusive file prevents overwriting an existing reparse-point target.
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                       4096, FileOptions.WriteThrough))
+            {
+                var receiptBytes = new UTF8Encoding(false).GetBytes(receipt);
+                stream.Write(receiptBytes);
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temporary, receiptPath);
             return exitCode;
         }
