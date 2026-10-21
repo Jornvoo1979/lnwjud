@@ -48,6 +48,14 @@ export function nativeReceiptMatchesHostExit(receipt: WindowsContainmentReceipt 
   return receipt !== undefined && nativeHostExitCode !== null && receipt.exitCode === nativeHostExitCode;
 }
 
+export function nativeReceiptMatchesClosedHost(
+  receipt: WindowsContainmentReceipt | undefined,
+  nativeHostExitCode: number | null,
+  nativeHostClosed: boolean,
+): receipt is WindowsContainmentReceipt {
+  return nativeHostClosed && nativeReceiptMatchesHostExit(receipt, nativeHostExitCode);
+}
+
 export class ProcessManager {
   private readonly records = new Map<string, ManagedRecord>();
 
@@ -320,7 +328,7 @@ export class ProcessManager {
         const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
         // A receipt file alone cannot verify cancellation. Wait until the actual
         // Native Host exits and confirm its OS-observed exit code matches the receipt.
-        if (record.nativeHostClosed === true && nativeReceiptMatchesHostExit(receipt, record.child.exitCode)) {
+        if (nativeReceiptMatchesClosedHost(receipt, record.child.exitCode, record.nativeHostClosed === true)) {
           this.acceptNativeReceipt(record, receipt);
           return true;
         }
