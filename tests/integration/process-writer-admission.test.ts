@@ -57,8 +57,9 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       // receipt for the native Job or proof that the writer lease can be freed.
       // While trusted producer authentication is unavailable, fail closed.
       await expect.poll(() => {
-        const status = processes.status(actor, workspace.id, started.value.processId);
-        return status.ok ? status.value.state : 'unavailable';
+        const status = await processes.status(actor, workspace.id, started.value.processId);
+        if (!status.ok) throw new Error(`Native process status probe failed: ${status.error.code}: ${status.error.message}`);
+        return status.value.state;
       }, { timeout: process.env.CI ? 90000 : 15000 }).toBe('termination_unverified');
       expect(await tasks.launch(importRequest)).toMatchObject({
         ok: false, error: { code: 'CONFLICT' },
