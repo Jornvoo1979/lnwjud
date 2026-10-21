@@ -43,6 +43,10 @@ interface ManagedRecord {
   resolveTerminationVerified?: () => void;
 }
 
+export function nativeReceiptMatchesHostExit(receipt: WindowsContainmentReceipt | undefined, nativeHostExitCode: number | null): boolean {
+  return receipt !== undefined && nativeHostExitCode !== null && receipt.exitCode === nativeHostExitCode;
+}
+
 export class ProcessManager {
   private readonly records = new Map<string, ManagedRecord>();
 
@@ -258,7 +262,7 @@ export class ProcessManager {
   private async handleNativeClose(record: ManagedRecord, nativeHostExitCode: number | null): Promise<void> {
     if (record.nativeReceiptPath === undefined) return;
     const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
-    if (receipt === undefined || nativeHostExitCode === null || receipt.exitCode !== nativeHostExitCode) {
+    if (!nativeReceiptMatchesHostExit(receipt, nativeHostExitCode)) {
       this.markTerminationUnverified(record, 'Native process Job Object completion is unverified');
       return;
     }
