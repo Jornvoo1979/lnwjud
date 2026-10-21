@@ -119,6 +119,9 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       const stopped = await manager.stop(processId);
       expect(stopped.ok).toBe(false);
       expect(manager.status(processId)).toMatchObject({ ok: true, value: { state: 'termination_unverified' } });
+      const retried = await manager.stop(processId, true);
+      expect(retried.ok).toBe(false);
+      expect(manager.status(processId)).toMatchObject({ ok: true, value: { state: 'termination_unverified' } });
       expect(callbacks).toBe(0);
       const receipt = JSON.parse(await readFile(path.join(containedRoot, processId, 'containment.receipt.json'), 'utf8'));
       expect(receipt).toMatchObject({ kind: 'windows_native_process_v1', exitCode: 125 });
