@@ -114,6 +114,12 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
         return state.ok ? state.value.state : 'unknown';
       }, { timeout: 15000 }).toBe('termination_unverified');
       expect(callbacks).toBe(0);
+      // Stop must return a bounded failure instead of waiting forever for a
+      // terminal attestation that the native receipt cannot authenticate.
+      const stopped = await manager.stop(processId);
+      expect(stopped.ok).toBe(false);
+      expect(manager.status(processId)).toMatchObject({ ok: true, value: { state: 'termination_unverified' } });
+      expect(callbacks).toBe(0);
       const receipt = JSON.parse(await readFile(path.join(containedRoot, processId, 'containment.receipt.json'), 'utf8'));
       expect(receipt).toMatchObject({ kind: 'windows_native_process_v1', exitCode: 125 });
     } finally {
