@@ -168,6 +168,7 @@ internal static class Program
                 assignedBeforeResume = true,
                 killOnJobClose = true,
                 jobIdentity = child.JobIdentity,
+                specDigest = digest,
             }, JsonOptions);
             var temporary = Path.Combine(directory, "containment.receipt.tmp");
             var receiptPath = Path.Combine(directory, "containment.receipt.json");
