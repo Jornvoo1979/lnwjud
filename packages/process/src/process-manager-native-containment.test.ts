@@ -114,7 +114,9 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
         starting,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('NATIVE_START_ABORT_STUCK')), 25000)),
       ]);
-      expect(result.ok).toBe(false);
+      // A generic cancellation error is not sufficient: after native spawn,
+      // returning CANCELLED would falsely imply verified ownership release.
+      expect(result).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
       expect(manager.status(processId)).toMatchObject({
         ok: true, value: { state: 'termination_unverified' },
       });
