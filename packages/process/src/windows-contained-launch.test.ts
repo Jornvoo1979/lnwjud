@@ -95,7 +95,14 @@ describe('native receipt file admission', () => {
     try {
       const target = path.join(root, 'target.json');
       const filename = path.join(root, 'containment.receipt.json');
-      await writeFile(target, '{}');
+      await writeFile(target, JSON.stringify({
+        kind: 'windows_native_process_v1', outcome: 'completed', exitCode: 0, activeProcesses: 0,
+        pid: 12345, processCreationTime: '123456789', restrictedToken: true,
+        assignedBeforeResume: true, killOnJobClose: true,
+        jobIdentity: '0123456789abcdef0123456789abcdef', specDigest: 'a'.repeat(64),
+      }));
+      // Control: the exact same bytes in a regular file are currently accepted by the schema reader.
+      expect(await readWindowsContainmentReceipt(target, 'windows_native_process_v1', 'a'.repeat(64))).toBeDefined();
       try { await symlink(target, filename, 'file'); } catch (error: unknown) {
         if (error instanceof Error && 'code' in error && (error.code === 'EPERM' || error.code === 'EACCES')) return;
         throw error;
