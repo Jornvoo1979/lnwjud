@@ -14,6 +14,7 @@ export interface WindowsContainedLaunch {
   readonly receiptPath: string;
   readonly cancelPath: string;
   readonly receiptKind: 'windows_native_process_v1';
+  readonly specDigest: string;
 }
 
 export interface LegacyWindowsContainmentReceipt {
@@ -34,6 +35,7 @@ export interface WindowsNativeProcessReceipt {
   readonly assignedBeforeResume: true;
   readonly killOnJobClose: true;
   readonly jobIdentity: string;
+  readonly specDigest: string;
 }
 
 export type WindowsContainmentReceipt = LegacyWindowsContainmentReceipt | WindowsNativeProcessReceipt;
@@ -71,12 +73,14 @@ export async function prepareWindowsContainedLaunch(input: {
     receiptPath,
     cancelPath,
     receiptKind: 'windows_native_process_v1',
+    specDigest: digest,
   };
 }
 
 export async function readWindowsContainmentReceipt(
   filename: string,
   expectedKind?: WindowsContainmentReceiptKind,
+  expectedSpecDigest?: string,
 ): Promise<WindowsContainmentReceipt | undefined> {
   try {
     const parsed: unknown = JSON.parse(await readFile(filename, 'utf8'));
@@ -98,7 +102,9 @@ export async function readWindowsContainmentReceipt(
       || item.restrictedToken !== true
       || item.assignedBeforeResume !== true
       || item.killOnJobClose !== true
-      || typeof item.jobIdentity !== 'string' || !/^[0-9a-f]{32}$/i.test(item.jobIdentity)) return undefined;
+      || typeof item.jobIdentity !== 'string' || !/^[0-9a-f]{32}$/i.test(item.jobIdentity)
+      || typeof expectedSpecDigest !== 'string' || !/^[0-9a-f]{64}$/.test(expectedSpecDigest)
+      || item.specDigest !== expectedSpecDigest) return undefined;
     return {
       kind: 'windows_native_process_v1',
       outcome: item.outcome,
@@ -110,6 +116,7 @@ export async function readWindowsContainmentReceipt(
       assignedBeforeResume: true,
       killOnJobClose: true,
       jobIdentity: item.jobIdentity,
+      specDigest: expectedSpecDigest,
     };
   } catch { return undefined; }
 }
