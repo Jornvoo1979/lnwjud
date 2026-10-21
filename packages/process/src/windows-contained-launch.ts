@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, open, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import {
   verifyWindowsNativeContainmentExecutable,
@@ -83,7 +84,24 @@ export async function readWindowsContainmentReceipt(
   expectedSpecDigest?: string,
 ): Promise<WindowsContainmentReceipt | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(filename, 'utf8'));
+    // Reject symlinks and oversized receipts before parsing attacker-controlled content.
+    // A verified task/lease attestation is still required for producer authentication.
+    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
+    const file = await open(filename, flags);
+    let content: string;
+    try {
+      const before = await file.stat();
+      if (!before.isFile() || before.size > 16 * 1024) return undefined;
+      const bytes = Buffer.alloc(16 * 1024 + 1);
+      const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+      if (bytesRead > 16 * 1024) return undefined;
+      const after = await file.stat();
+      if (!after.isFile() || after.size !== before.size || after.mtimeMs !== before.mtimeMs || bytesRead !== before.size) return undefined;
+      content = bytes.toString('utf8', 0, bytesRead);
+    } finally {
+      await file.close();
+    }
+    const parsed: unknown = JSON.parse(content);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
     const item = parsed as Record<string, unknown>;
     if (expectedKind !== undefined && item.kind !== expectedKind) return undefined;
