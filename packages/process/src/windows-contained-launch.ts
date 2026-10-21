@@ -124,7 +124,10 @@ export async function readWindowsContainmentReceipt(
         || typeof item.exitCode !== 'number' || !Number.isInteger(item.exitCode)) return undefined;
       return { kind: 'windows_job_v1', activeProcesses: 0, outcome: item.outcome, exitCode: item.exitCode };
     }
-    if (item.kind !== 'windows_native_process_v1'
+    // Never admit native evidence unless the caller explicitly requests that
+    // receipt schema. This is type admission only, not producer authentication.
+    if (expectedKind !== 'windows_native_process_v1'
+      || item.kind !== 'windows_native_process_v1'
       || item.activeProcesses !== 0
       || (item.outcome !== 'completed' && item.outcome !== 'cancelled' && item.outcome !== 'timed_out')
       || typeof item.exitCode !== 'number' || !Number.isInteger(item.exitCode)
