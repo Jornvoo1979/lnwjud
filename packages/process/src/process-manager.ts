@@ -232,8 +232,12 @@ export class ProcessManager {
     if (record.state !== 'termination_unverified' && isTerminal(record.state)) return ok(undefined);
     const targetState = record.terminationTarget ?? 'stopped';
     let verified = await this.tryTerminate(record, targetState);
-    while (!verified && autoRetry && isChildLive(record.child)) {
-      await delay(START_CANCELLATION_RETRY_MS);
+    // Auto-retry is bounded: an unverified native receipt cannot keep the
+    // caller waiting indefinitely or grant ownership release by repetition.
+    const retryDeadline = Date.now() + 5_000;
+    while (!verified && autoRetry && isChildLive(record.child) && Date.now() < retryDeadline) {
+      await delay(Math.min(START_CANCELLATION_RETRY_MS, Math.max(0, retryDeadline - Date.now())));
+      if (Date.now() >= retryDeadline) break;
       verified = await this.tryTerminate(record, targetState);
     }
     // A pending terminal proof must not hang the caller indefinitely or be
