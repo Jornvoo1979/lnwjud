@@ -50,8 +50,10 @@ describe('native receipt authentication (RED until trusted binding lands)', () =
         assignedBeforeResume: true,
         killOnJobClose: true,
         jobIdentity: '0123456789abcdef0123456789abcdef',
+        specDigest: 'a'.repeat(64),
       }));
-      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1')).toBeUndefined();
+      // A matching digest is correlation, not proof that a trusted Native Host produced the receipt.
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'a'.repeat(64))).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }
