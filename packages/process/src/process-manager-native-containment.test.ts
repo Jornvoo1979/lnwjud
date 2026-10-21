@@ -54,4 +54,31 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
   }, process.env.CI ? 130000 : 18000);
+  it('fails closed when a receipt temporary path is pre-created while native child runs', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-native-temp-collision-'));
+    try {
+      const containedRoot = path.join(root, 'managed-processes');
+      await mkdir(containedRoot);
+      let callbacks = 0;
+      const processId = '229e48e5-571d-4f3b-b33c-f3aafceef108';
+      const manager = new ProcessManager(undefined, undefined, undefined, undefined, containedRoot);
+      const result = await manager.start({
+        executable: process.execPath,
+        args: ['-e', 'setTimeout(() => process.exit(0), 1800)'],
+        cwd: root, containmentId: processId, timeoutMs: 20000,
+      }, undefined, undefined, (): void => { callbacks++; });
+      expect(result).toMatchObject({ ok: true });
+      if (!result.ok) return;
+      const temp = path.join(containedRoot, processId, 'containment.receipt.tmp');
+      // The native child is still running; refuse to clobber a precreated receipt path.
+      await writeFile(temp, 'untrusted-preexisting-data', { flag: 'wx' });
+      await expect.poll(() => manager.status(processId).ok
+        ? manager.status(processId).value.state : 'unknown', { timeout: 15000 }).toBe('termination_unverified');
+      expect(await readFile(temp, 'utf8')).toBe('untrusted-preexisting-data');
+      expect(callbacks).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+    }
+  }, 25000);
+
 });
