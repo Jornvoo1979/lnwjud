@@ -44,6 +44,15 @@ describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => 
         nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
       });
       expect(nested.receiptPath).toBe(path.join(nestedDirectory, 'containment.receipt.json'));
+      // A stale cancellation marker must never be inherited by a new launch.
+      const staleDir = path.join(root, 'stale-task');
+      await mkdir(staleDir);
+      await writeFile(path.join(staleDir, 'containment.cancel'), 'cancel');
+      await expect(prepareWindowsContainedLaunch({
+        directory: staleDir, executable: process.execPath, cwd: root, timeoutMs: 10000,
+        args: ['--version'],
+        nativeHost: { executablePath: host, expectedSha256: sha256, expectedSizeBytes: bytes.byteLength },
+      })).rejects.toThrow('WINDOWS_CONTAINMENT_STALE_ARTIFACT');
       expect(invocation.executable).toBe(host);
       expect(invocation.args[0]).toBe('--contained-process');
       expect(invocation.args).toHaveLength(3);
