@@ -31,6 +31,7 @@ interface ManagedRecord {
   readonly nativeSpecDigest?: string;
   readonly onVerifiedNativeTermination?: () => void;
   nativeTerminationNotified?: boolean;
+  nativeHostClosed?: boolean;
   state: ManagedProcessState;
   finishedAt?: string;
   exitCode?: number;
@@ -138,6 +139,7 @@ export class ProcessManager {
     child.stderr?.on('data', (chunk: Buffer) => record.logs.append('stderr', chunk.toString('utf8')));
     child.once('error', (error: Error & { code?: string }) => this.handleError(record, error));
     child.once('close', (exitCode: number | null) => {
+      record.nativeHostClosed = true;
       if (record.nativeReceiptPath === undefined) this.handleClose(record, exitCode);
       else void this.handleNativeClose(record, exitCode);
     });
@@ -318,7 +320,7 @@ export class ProcessManager {
         const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
         // A receipt file alone cannot verify cancellation. Wait until the actual
         // Native Host exits and confirm its OS-observed exit code matches the receipt.
-        if (nativeReceiptMatchesHostExit(receipt, record.child.exitCode)) {
+        if (record.nativeHostClosed === true && nativeReceiptMatchesHostExit(receipt, record.child.exitCode)) {
           this.acceptNativeReceipt(record, receipt);
           return true;
         }
