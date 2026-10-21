@@ -28,6 +28,7 @@ interface ManagedRecord {
   readonly nativeReceiptPath?: string;
   readonly nativeCancelPath?: string;
   readonly nativeReceiptKind?: WindowsContainmentReceiptKind;
+  readonly nativeSpecDigest?: string;
   readonly onVerifiedNativeTermination?: () => void;
   nativeTerminationNotified?: boolean;
   state: ManagedProcessState;
@@ -122,6 +123,7 @@ export class ProcessManager {
         nativeReceiptPath: contained.receiptPath,
         nativeCancelPath: contained.cancelPath,
         nativeReceiptKind: contained.receiptKind,
+        nativeSpecDigest: contained.specDigest,
       }),
       ...(onVerifiedNativeTermination === undefined ? {} : { onVerifiedNativeTermination }),
       state: 'starting',
@@ -255,7 +257,7 @@ export class ProcessManager {
 
   private async handleNativeClose(record: ManagedRecord): Promise<void> {
     if (record.nativeReceiptPath === undefined) return;
-    const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind);
+    const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
     if (receipt === undefined) {
       this.markTerminationUnverified(record, 'Native process Job Object completion is unverified');
       return;
@@ -309,7 +311,7 @@ export class ProcessManager {
       }
       const deadline = Date.now() + 12000;
       while (Date.now() < deadline) {
-        const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind);
+        const receipt = await readWindowsContainmentReceipt(record.nativeReceiptPath, record.nativeReceiptKind, record.nativeSpecDigest);
         if (receipt !== undefined) {
           this.acceptNativeReceipt(record, receipt);
           return true;
