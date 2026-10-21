@@ -53,11 +53,16 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       await expect.poll(async () => {
         try { return await readFile(sentinel, 'utf8'); } catch { return ''; }
       }, { timeout: process.env.CI ? 90000 : 15000 }).toBe('done');
-      await expect.poll(async () => (await tasks.launch(importRequest)).ok, { timeout: process.env.CI ? 90000 : 15000 }).toBe(true);
-      await expect.poll(async () => {
-        const result = await tasks.snapshot(importRequest.taskId, undefined, importRequest.owner);
-        return result.ok ? result.value.state : 'unavailable';
-      }, { timeout: process.env.CI ? 90000 : 15000 }).toBe('completed');
+      // The descendant writing the sentinel is not an authenticated terminal
+      // receipt for the native Job or proof that the writer lease can be freed.
+      // While trusted producer authentication is unavailable, fail closed.
+      await expect.poll(() => {
+        const status = processes.status(actor, workspace.id, started.value.processId);
+        return status.ok ? status.value.state : 'unavailable';
+      }, { timeout: process.env.CI ? 90000 : 15000 }).toBe('termination_unverified');
+      expect(await tasks.launch(importRequest)).toMatchObject({
+        ok: false, error: { code: 'CONFLICT' },
+      });
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
     }
