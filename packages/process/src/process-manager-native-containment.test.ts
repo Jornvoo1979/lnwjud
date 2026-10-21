@@ -6,7 +6,7 @@ import { ProcessManager } from './process-manager.js';
 import { resolvePackagedWindowsNativeContainmentExecutable } from './windows-native-containment.js';
 
 describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeContainmentExecutable() === undefined)('native contained ProcessManager', () => {
-  it('keeps detached descendants alive until they exit, and then fires verified completion callback', async () => {
+  it('keeps descendants contained but refuses untrusted terminal receipt ownership release', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-direct-process-contained-'));
     try {
       const containedRoot = path.join(root, 'managed-processes');
@@ -36,9 +36,11 @@ describe.skipIf(process.platform !== 'win32' || resolvePackagedWindowsNativeCont
       }
       expect(earlyStatus).toMatchObject({ ok: true, value: { state: 'running' } });
       await expect.poll(() => manager.status(result.value.processId).ok
-        ? manager.status(result.value.processId).value.state : 'unknown', { timeout: process.env.CI ? 100000 : 12000 }).toBe('exited');
+        ? manager.status(result.value.processId).value.state : 'unknown', { timeout: process.env.CI ? 100000 : 12000 }).toBe('termination_unverified');
       expect(await readFile(finished, 'utf8')).toBe('yes');
-      expect(callbacks).toBe(1);
+      // Until an independently authenticated native channel exists, a disk receipt
+      // must never trigger the verified-termination ownership-release callback.
+      expect(callbacks).toBe(0);
       const receipt = JSON.parse(await readFile(path.join(containedRoot, '107c1eb1-638e-4d7d-bf47-c47ed7b6d558', 'containment.receipt.json'), 'utf8'));
       expect(receipt).toMatchObject({
         kind: 'windows_native_process_v1',
