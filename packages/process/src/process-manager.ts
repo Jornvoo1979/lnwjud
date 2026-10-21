@@ -45,7 +45,10 @@ interface ManagedRecord {
 }
 
 export function nativeReceiptMatchesHostExit(receipt: WindowsContainmentReceipt | undefined, nativeHostExitCode: number | null): receipt is WindowsContainmentReceipt {
-  return receipt !== undefined && nativeHostExitCode !== null && receipt.exitCode === nativeHostExitCode;
+  // Exit status 125 is reserved by Windows Native Host for containment failures.
+  // A forged receipt matching that error status must never release a writer.
+  return receipt !== undefined && nativeHostExitCode !== null && nativeHostExitCode !== 125
+    && receipt.exitCode === nativeHostExitCode;
 }
 
 export function nativeReceiptMatchesClosedHost(
