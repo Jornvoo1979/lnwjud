@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, open, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import {
@@ -53,9 +53,9 @@ export async function prepareWindowsContainedLaunch(input: {
   if (process.platform !== 'win32') throw new Error('WINDOWS_CONTAINMENT_UNSUPPORTED');
   if (![input.directory, input.executable, input.cwd].every((value) => path.isAbsolute(value))) throw new Error('WINDOWS_CONTAINMENT_ABSOLUTE_PATH_REQUIRED');
   if (!verifyWindowsNativeContainmentExecutable(input.nativeHost)) throw new Error('WINDOWS_NATIVE_CONTAINMENT_IDENTITY_UNVERIFIED');
-  await mkdir(input.directory, { recursive: true, mode: 0o700 });
-  // An invocation directory must be fresh: stale receipts/cancellation markers must not be reused.
-  if ((await readdir(input.directory)).length !== 0) throw new Error('WINDOWS_CONTAINMENT_DIRECTORY_NOT_EMPTY');
+  // Atomic exclusive creation: an existing directory is never reused, even if empty.
+  // Parent directories must already be provisioned by the trusted containment owner.
+  await mkdir(input.directory, { mode: 0o700 });
   const specPath = path.join(input.directory, 'containment.json');
   const receiptPath = path.join(input.directory, 'containment.receipt.json');
   const cancelPath = path.join(input.directory, 'containment.cancel');
