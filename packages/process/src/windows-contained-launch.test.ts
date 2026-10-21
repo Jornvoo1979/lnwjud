@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { prepareWindowsContainedLaunch, readWindowsContainmentReceipt } from './windows-contained-launch.js';
+import { nativeReceiptMatchesHostExit } from './process-manager.js';
 
 describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => {
   it('prepares only the integrity-bound native host and refuses receipt downgrade', async () => {
@@ -135,5 +136,23 @@ describe('native receipt file admission', () => {
       }
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'a'.repeat(64))).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+describe('native host exit correlation', () => {
+  const receipt = {
+    kind: 'windows_native_process_v1' as const,
+    outcome: 'completed' as const, exitCode: 0, activeProcesses: 0 as const,
+    pid: 123, processCreationTime: '123456789', restrictedToken: true as const,
+    assignedBeforeResume: true as const, killOnJobClose: true as const,
+    jobIdentity: '0123456789abcdef0123456789abcdef', specDigest: 'a'.repeat(64),
+  };
+  it('rejects missing and contradictory host results', () => {
+    expect(nativeReceiptMatchesHostExit(undefined, 0)).toBe(false);
+    expect(nativeReceiptMatchesHostExit(receipt, null)).toBe(false);
+    expect(nativeReceiptMatchesHostExit(receipt, 125)).toBe(false);
+  });
+  it('accepts only an equal known host exit code as a correlation check', () => {
+    expect(nativeReceiptMatchesHostExit(receipt, 0)).toBe(true);
   });
 });
