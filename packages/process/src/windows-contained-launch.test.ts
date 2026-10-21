@@ -98,7 +98,7 @@ describe('native receipt authentication (RED until trusted binding lands)', () =
 
 // Matching the launch specification is a necessary correlation check, not producer authentication.
 describe('native receipt spec correlation', () => {
-  it('rejects a receipt from a different launch and accepts matching fields only with expected digest', async () => {
+  it('rejects native disk receipts even when launch correlation fields match', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-receipt-correlation-'));
     try {
       const filename = path.join(root, 'containment.receipt.json');
@@ -113,7 +113,7 @@ describe('native receipt spec correlation', () => {
       expect(await readWindowsContainmentReceipt(filename, undefined, specDigest)).toBeUndefined();
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1')).toBeUndefined();
       expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'b'.repeat(64))).toBeUndefined();
-      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', specDigest)).toMatchObject({ specDigest });
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', specDigest)).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
@@ -156,8 +156,8 @@ describe('native receipt file admission', () => {
         assignedBeforeResume: true, killOnJobClose: true,
         jobIdentity: '0123456789abcdef0123456789abcdef', specDigest: 'a'.repeat(64),
       }));
-      // Control: the exact same bytes in a regular file are currently accepted by the schema reader.
-      expect(await readWindowsContainmentReceipt(target, 'windows_native_process_v1', 'a'.repeat(64))).toBeDefined();
+      // Both regular and linked native receipt JSON must fail closed without authenticated provenance.
+      expect(await readWindowsContainmentReceipt(target, 'windows_native_process_v1', 'a'.repeat(64))).toBeUndefined();
       try { await symlink(target, filename, 'file'); } catch (error: unknown) {
         if (error instanceof Error && 'code' in error && (error.code === 'EPERM' || error.code === 'EACCES')) return;
         throw error;
