@@ -43,7 +43,7 @@ interface ManagedRecord {
   resolveTerminationVerified?: () => void;
 }
 
-export function nativeReceiptMatchesHostExit(receipt: WindowsContainmentReceipt | undefined, nativeHostExitCode: number | null): boolean {
+export function nativeReceiptMatchesHostExit(receipt: WindowsContainmentReceipt | undefined, nativeHostExitCode: number | null): receipt is WindowsContainmentReceipt {
   return receipt !== undefined && nativeHostExitCode !== null && receipt.exitCode === nativeHostExitCode;
 }
 
