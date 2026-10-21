@@ -109,7 +109,9 @@ internal static class Program
             if (!specInfo.Exists || specInfo.Length <= 0 || specInfo.Length > MaxInputBytes
                 || (specInfo.Attributes & FileAttributes.ReparsePoint) != 0)
                 throw new IOException("WINDOWS_CONTAINMENT_SPEC_UNTRUSTED_FILE");
-            using var specStream = new FileStream(specPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            // Deny concurrent write/delete opens during verification and parsing.
+            // This does not eliminate a reparse swap before open or authenticate the receipt.
+            using var specStream = new FileStream(specPath, FileMode.Open, FileAccess.Read, FileShare.None,
                 4096, FileOptions.SequentialScan);
             if (specStream.Length <= 0 || specStream.Length > MaxInputBytes)
                 throw new IOException("WINDOWS_CONTAINMENT_SPEC_TOO_LARGE");
