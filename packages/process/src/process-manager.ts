@@ -236,7 +236,12 @@ export class ProcessManager {
       await delay(START_CANCELLATION_RETRY_MS);
       verified = await this.tryTerminate(record, targetState);
     }
-    if (!verified) await this.waitForVerifiedTermination(record);
+    // A pending terminal proof must not hang the caller indefinitely or be
+    // misreported as successful cancellation. Keep ownership fenced until an
+    // independently authenticated native termination is observed.
+    if (!verified) {
+      return err(appError('CONFLICT', 'Process termination remains unverified; ownership retained', true));
+    }
     return ok(undefined);
   }
 
