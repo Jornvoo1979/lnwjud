@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, open, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import {
@@ -86,12 +86,15 @@ export async function readWindowsContainmentReceipt(
   try {
     // Reject symlinks and oversized receipts before parsing attacker-controlled content.
     // A verified task/lease attestation is still required for producer authentication.
+    const entry = await lstat(filename);
+    if (!entry.isFile() || entry.isSymbolicLink()) return undefined;
     const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
     const file = await open(filename, flags);
     let content: string;
     try {
       const before = await file.stat();
-      if (!before.isFile() || before.size > 16 * 1024) return undefined;
+      if (!before.isFile() || before.size > 16 * 1024
+        || before.dev !== entry.dev || before.ino !== entry.ino) return undefined;
       const bytes = Buffer.alloc(16 * 1024 + 1);
       const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
       if (bytesRead > 16 * 1024) return undefined;
