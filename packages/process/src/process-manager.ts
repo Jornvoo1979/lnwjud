@@ -176,6 +176,13 @@ export class ProcessManager {
           let verified = false;
           while (!verified) {
             verified = await this.tryTerminate(record, 'stopped');
+            if (!verified && record.nativeReceiptKind === 'windows_native_process_v1') {
+              // Once spawned, a native host without authenticated terminal proof
+              // must retain ownership. Do not leave the start cancellation Promise
+              // unresolved forever or incorrectly report verified cancellation.
+              settle(err(appError('CONFLICT', 'Native start cancellation remains unverified; ownership retained', true)));
+              return;
+            }
             if (!verified) {
               if (!isChildLive(record.child)) await this.waitForVerifiedTermination(record);
               await delay(START_CANCELLATION_RETRY_MS);
