@@ -32,3 +32,28 @@ describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => 
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
+
+// RED security regression: existing reader checks schema but lacks trusted ownership proof.
+describe('native receipt authentication (RED until trusted binding lands)', () => {
+  it('rejects a syntactically valid, untrusted native receipt', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-receipt-red-'));
+    try {
+      const filename = path.join(root, 'containment.receipt.json');
+      await writeFile(filename, JSON.stringify({
+        kind: 'windows_native_process_v1',
+        outcome: 'completed',
+        exitCode: 0,
+        activeProcesses: 0,
+        pid: 12345,
+        processCreationTime: '123456789',
+        restrictedToken: true,
+        assignedBeforeResume: true,
+        killOnJobClose: true,
+        jobIdentity: '0123456789abcdef0123456789abcdef',
+      }));
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1')).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
