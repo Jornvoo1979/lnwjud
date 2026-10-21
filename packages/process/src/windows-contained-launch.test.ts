@@ -57,3 +57,23 @@ describe('native receipt authentication (RED until trusted binding lands)', () =
     }
   });
 });
+
+// Matching the launch specification is a necessary correlation check, not producer authentication.
+describe('native receipt spec correlation', () => {
+  it('rejects a receipt from a different launch and accepts matching fields only with expected digest', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-receipt-correlation-'));
+    try {
+      const filename = path.join(root, 'containment.receipt.json');
+      const specDigest = 'a'.repeat(64);
+      await writeFile(filename, JSON.stringify({
+        kind: 'windows_native_process_v1', outcome: 'completed', exitCode: 0, activeProcesses: 0,
+        pid: 12345, processCreationTime: '123456789', restrictedToken: true,
+        assignedBeforeResume: true, killOnJobClose: true,
+        jobIdentity: '0123456789abcdef0123456789abcdef', specDigest,
+      }));
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1')).toBeUndefined();
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', 'b'.repeat(64))).toBeUndefined();
+      expect(await readWindowsContainmentReceipt(filename, 'windows_native_process_v1', specDigest)).toMatchObject({ specDigest });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
