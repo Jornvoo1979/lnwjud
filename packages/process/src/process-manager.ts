@@ -283,6 +283,13 @@ export class ProcessManager {
   }
 
   private acceptNativeReceipt(record: ManagedRecord, receipt: WindowsContainmentReceipt): void {
+    // P0 fail-closed: a disk receipt and host exit-code correlation do not authenticate
+    // the native Job owner. Never acknowledge verified termination or release ownership
+    // until an independently verified OS-backed producer channel is integrated.
+    if (record.nativeReceiptKind === 'windows_native_process_v1') {
+      this.markTerminationUnverified(record, 'Native terminal receipt origin is not independently authenticated');
+      return;
+    }
     if (!isTerminal(record.state)) {
       const state = record.stopRequested === 'timed_out' || receipt.outcome === 'timed_out'
         ? 'timed_out'
@@ -333,7 +340,7 @@ export class ProcessManager {
         // Native Host exits and confirm its OS-observed exit code matches the receipt.
         if (nativeReceiptMatchesClosedHost(receipt, record.child.exitCode, record.nativeHostClosed === true)) {
           this.acceptNativeReceipt(record, receipt);
-          return true;
+          return isVerifiedTerminal(record.state);
         }
         if (isVerifiedTerminal(record.state)) return true;
         await delay(100);
