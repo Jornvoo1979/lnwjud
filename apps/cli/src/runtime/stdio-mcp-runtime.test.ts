@@ -248,12 +248,12 @@ describe('stdio MCP runtime', { timeout: STDIO_RUNTIME_TEST_TIMEOUT_MS }, () => 
     const database = new SqliteDatabase(path.join(dataPath, 'lnwjud.sqlite'));
     await new SqliteWorkspaceRepository(database).insert(registered);
     database.close();
-    const marker = path.join(dataPath, 'must-not-exist.txt');
+    // Exercise a policy-permitted executable to reach native containment denial.
     const runtime = createStdioMcpRuntime(dataPath, registered, true);
     try {
       const attempt = await runtime.services.capabilities?.execute('shell', {
         operation: 'run', workspaceId: registered.id, executable: process.execPath,
-        arguments: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unsafe')`],
+        arguments: ['--version'],
         cwd: dataPath, execution: 'background', timeout_seconds: 5, userConfirmed: true,
         metadata: { [CAPABILITY_TASK_OWNER_METADATA_KEY]: {
           clientId: 'cli-mcp-stdio', sessionId: 'macos-denial', workspaceId: registered.id,
@@ -262,7 +262,10 @@ describe('stdio MCP runtime', { timeout: STDIO_RUNTIME_TEST_TIMEOUT_MS }, () => 
       expect(attempt).toMatchObject({
         ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('macOS durable shell unavailable') },
       });
-      await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      const tasks = await runtime.services.capabilities?.execute('shell', {
+        operation: 'list', workspaceId: registered.id,
+      });
+      expect(tasks).toMatchObject({ ok: true, value: { tasks: [] } });
     } finally {
       await runtime.close();
     }

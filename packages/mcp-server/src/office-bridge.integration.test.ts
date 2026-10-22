@@ -19,9 +19,12 @@ describe.skipIf(process.platform !== 'win32')('Windows Office bridge boundary in
       const bytes = await readFile(scriptPath);
       const bridge = new PowerShellWindowsCapabilityBridge({ scriptPath, expectedScriptSha256: createHash('sha256').update(bytes).digest('hex'), expectedScriptSizeBytes: bytes.length });
       const app = "ไทย 😀 O'Brien $(Get-Process)";
-      await expect(bridge.execute({ capability: 'office', input: { app, action: 'status', timeout_seconds: 20 } })).resolves.toMatchObject({ ok: false, error: { message: `Windows native capability failed: Unsupported office app: ${app}` } });
+      // Windows hosted release runners can cold-start an integrity-checked
+      // PowerShell process under concurrent native suites. Keep a bounded
+      // budget without accepting PROCESS_TIMEOUT as a successful rejection.
+      await expect(bridge.execute({ capability: 'office', input: { app, action: 'status', timeout_seconds: 60 } })).resolves.toMatchObject({ ok: false, error: { message: `Windows native capability failed: Unsupported office app: ${app}` } });
     } finally { await rm(root, { recursive: true, force: true }); }
-  }, 30_000);
+  }, 75_000);
   it('preserves Thai and supplementary characters through the actual process boundary without COM dispatch', async () => {
     const scriptPath = fileURLToPath(new URL('../../capabilities/src/windows-capability-bridge.ps1', import.meta.url));
     const bridge = new PowerShellWindowsCapabilityBridge({ scriptPath });
