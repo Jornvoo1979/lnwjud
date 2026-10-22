@@ -727,7 +727,19 @@ internal static class NativeTests
             var runtime = new ServiceImportTransactionRuntime(ledger, importStore, useCurrentUserTestLauncher: true);
             var operation = System.Text.Json.JsonSerializer.SerializeToElement(new { workspaceRoot = workspace, destination = "repo", stagePath = stage, commit, privateHome = home });
             var prepared = runtime.Control("prepare_import", request.Identity, sid, operation, caller.AccessToken);
-            Git("-c", "core.hooksPath=NUL", "clone", "--no-hardlinks", "--", source, stage);
+            // The native publication test needs a valid fixture checkout, not
+            // Git's clone optimization: on Windows scanners may temporarily
+            // deny loose-object unlink or pack keep-file creation in a fresh
+            // SID-restricted staging directory. Copy only this locally created
+            // fixture repository into the already anchored private stage; the
+            // native control still performs real contained Git HEAD/index/status
+            // validation and checks the same NTFS stage identity before rename.
+            foreach (var sourceFile in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+            {
+                var destinationFile = Path.Combine(stage, Path.GetRelativePath(source, sourceFile));
+                Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
+                File.Copy(sourceFile, destinationFile);
+            }
             var publication = System.Text.Json.JsonSerializer.SerializeToElement(new { workspaceRoot = workspace, destination = "repo", stagePath = stage, commit, privateHome = home, expectedStageIdentity = prepared.Result.NativeIdentity });
             var destination = Path.Combine(workspace, "repo");
             if (scenario == "cancel_before_control")
