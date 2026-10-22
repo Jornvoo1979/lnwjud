@@ -241,7 +241,34 @@ describe('stdio MCP runtime', { timeout: STDIO_RUNTIME_TEST_TIMEOUT_MS }, () => 
     }
   });
 
-  it('persists and completes a verified automation run across a STDIO runtime replacement without creating a schedule', async () => {
+  it.skipIf(process.platform !== 'darwin')('refuses STDIO durable execution on macOS before creating a child', async () => {
+    const dataPath = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stdio-denied-macos-'));
+    temporaryRoots.push(dataPath);
+    const registered = { ...workspace, rootPath: dataPath, realRootPath: dataPath };
+    const database = new SqliteDatabase(path.join(dataPath, 'lnwjud.sqlite'));
+    await new SqliteWorkspaceRepository(database).insert(registered);
+    database.close();
+    const marker = path.join(dataPath, 'must-not-exist.txt');
+    const runtime = createStdioMcpRuntime(dataPath, registered, true);
+    try {
+      const attempt = await runtime.services.capabilities?.execute('shell', {
+        operation: 'run', workspaceId: registered.id, executable: process.execPath,
+        arguments: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unsafe')`],
+        cwd: dataPath, execution: 'background', timeout_seconds: 5, userConfirmed: true,
+        metadata: { [CAPABILITY_TASK_OWNER_METADATA_KEY]: {
+          clientId: 'cli-mcp-stdio', sessionId: 'macos-denial', workspaceId: registered.id,
+        } },
+      });
+      expect(attempt).toMatchObject({
+        ok: false, error: { code: 'CONFLICT', message: expect.stringContaining('macOS durable shell unavailable') },
+      });
+      await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it.skipIf(process.platform === 'darwin')('persists and completes a verified automation run across a STDIO runtime replacement without creating a schedule', async () => {
     const testDeadline = Date.now() + STDIO_RUNTIME_TEST_TIMEOUT_MS;
     const dataPath = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stdio-automation-data-'));
     const workspaceRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stdio-automation-workspace-')));
@@ -523,7 +550,7 @@ describe('stdio MCP runtime', { timeout: STDIO_RUNTIME_TEST_TIMEOUT_MS }, () => 
     }
   });
 
-  it('keeps a shell background task alive across STDIO runtime replacement', async () => {
+  it.skipIf(process.platform === 'darwin')('keeps a shell background task alive across STDIO runtime replacement', async () => {
     const dataPath = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stdio-durable-'));
     temporaryRoots.push(dataPath);
     const durableWorkspace = { ...workspace, rootPath: dataPath, realRootPath: dataPath };
@@ -578,7 +605,7 @@ describe('stdio MCP runtime', { timeout: STDIO_RUNTIME_TEST_TIMEOUT_MS }, () => 
     await replacementRuntime.close();
   });
 
-  it('reads durable shell task liveness after STDIO runtime replacement without treating another session as absence', async () => {
+  it.skipIf(process.platform === 'darwin')('reads durable shell task liveness after STDIO runtime replacement without treating another session as absence', async () => {
     const dataPath = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stdio-goal-liveness-data-'));
     const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-stdio-goal-liveness-workspace-'));
     temporaryRoots.push(dataPath, workspaceRoot);

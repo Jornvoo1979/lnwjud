@@ -127,7 +127,9 @@ Thread.Sleep(120000);`);
       DOTNET_CLI_USE_MSBUILD_SERVER: '0',
       MSBUILDDISABLENODEREUSE: '1',
     };
-    await execute('dotnet', ['build', nativeSuite, '-c', 'Release', '--no-restore',
+    // Hosted Windows workspace-test runners have no restored native test assets.
+    // Restore the self-contained test project before isolated compilation.
+    await execute('dotnet', ['build', nativeSuite, '-c', 'Release',
       '--disable-build-servers', '-p:UseSharedCompilation=false'], {
       timeout: 180_000, maxBuffer: 1024 * 1024, env: isolatedEnvironment,
     });
