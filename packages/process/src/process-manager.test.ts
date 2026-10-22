@@ -62,7 +62,7 @@ describe('ProcessManager', () => {
     expect(released).toHaveBeenCalledTimes(2);
   });
 
-  it.skipIf(process.platform === 'win32').each([false, true])('does not release an ordinary parent exit while inherited pipes remain open (detached descendant: %s)', async (detached) => {
+  it.skipIf(process.platform !== 'linux').each([false, true])('does not release an ordinary parent exit while inherited pipes remain open (detached descendant: %s)', async (detached) => {
     const released = vi.fn();
     const manager = new ProcessManager();
     const childScript = "setTimeout(() => process.stdout.write('descendant-finished'), 1500)";

@@ -60,6 +60,11 @@ jobs:
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
 
+      - name: Provision real protected Windows containment service
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/prepare-windows-containment-ci.ps1
+
       - name: Run version contract
         shell: bash
         run: pnpm test:version
@@ -105,7 +110,12 @@ jobs:
 
       - name: Test Windows containment native failure boundaries
         if: matrix.name == 'Windows'
-        run: dotnet run --project native/windows-containment-helper/tests/ContainmentNativeTests.csproj -c Release
+        shell: pwsh
+        run: |
+          dotnet build native/windows-containment-helper/tests/ContainmentNativeTests.csproj -c Release --disable-build-servers -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'CI_NATIVE_TEST_BUILD_FAILED' }
+          dotnet run --project native/windows-containment-helper/tests/ContainmentNativeTests.csproj -c Release --no-build --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'CI_NATIVE_TESTS_FAILED' }
 
       - name: Run complete native unit and service acceptance suites
         shell: bash
@@ -190,6 +200,11 @@ jobs:
 
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
+
+      - name: Provision real protected Windows containment service
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/prepare-windows-containment-ci.ps1
 
       - name: Build workspace packages used by desktop acceptance tests
         shell: bash
@@ -698,6 +713,11 @@ jobs:
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
 
+      - name: Provision real protected Windows containment service
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/prepare-windows-containment-ci.ps1
+
       - name: Build workspace type declarations
         run: pnpm typecheck
 
@@ -818,6 +838,15 @@ jobs:
             }
             rg --version
           }
+
+      - name: Provision real protected Windows containment service for release gate
+        shell: pwsh
+        run: |
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'CI_PNPM_INSTALL_FAILED' }
+          pnpm prepare:containment
+          if ($LASTEXITCODE -ne 0) { throw 'CI_CONTAINMENT_PREPARE_FAILED' }
+          ./scripts/prepare-windows-containment-ci.ps1
 
       - name: Run pull-request verification gate
         if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'

@@ -522,11 +522,13 @@ export class DurableShellTaskStore {
   public async wait(taskId: string, seconds: number, tailLines?: number, owner?: CapabilityTaskOwner, refreshTerminalAfterDeadline = true): Promise<Result<Record<string, unknown>>> {
     const deadline = Date.now() + Math.max(0, seconds) * 1000;
     let snapshot = await this.snapshot(taskId, tailLines, owner);
-    while (snapshot.ok && isExecutingState(snapshot.value.state) && Date.now() < deadline) {
+    // A live POSIX worker may report unverified while descendants are still
+    // draining; it must be polled, never mistaken for an authoritative terminal.
+    while (snapshot.ok && (isExecutingState(snapshot.value.state) || snapshot.value.state === 'termination_unverified') && Date.now() < deadline) {
       await delay(Math.min(100, Math.max(10, deadline - Date.now())));
       snapshot = await this.snapshot(taskId, tailLines, owner);
     }
-    if (!snapshot.ok || !isExecutingState(snapshot.value.state) || !refreshTerminalAfterDeadline) return snapshot;
+    if (!snapshot.ok || !(isExecutingState(snapshot.value.state) || snapshot.value.state === 'termination_unverified') || !refreshTerminalAfterDeadline) return snapshot;
 
     // A slow host liveness probe can consume the wait budget after reading a
     // running snapshot while the worker persists its terminal state. Refresh

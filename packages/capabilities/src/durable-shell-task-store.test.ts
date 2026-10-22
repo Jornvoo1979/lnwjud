@@ -57,6 +57,31 @@ afterEach(async () => {
 });
 
 describe('durable shell background tasks', () => {
+  it('keeps waiting through provisional termination-unverified state until a canonical terminal write', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-wait-reconcile-'));
+    temporaryRoots.push(root);
+    const taskId = 'worker-still-reconciling';
+    const directory = path.join(root, taskId);
+    await mkdir(directory);
+    const record = {
+      version: 1, task_id: taskId, state: 'termination_unverified',
+      started_at: new Date().toISOString(), deadline_at: new Date(Date.now() + 10000).toISOString(),
+      include_stdout: false, include_stderr: false, max_output_bytes: 1024,
+    };
+    const metadataPath = path.join(directory, 'task.json');
+    await writeFile(metadataPath, JSON.stringify(record));
+    const finalize = new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        void writeFile(metadataPath, JSON.stringify({
+          ...record, state: 'completed', exit_code: 0, finished_at: new Date().toISOString(),
+        })).then(resolve, reject);
+      }, 160);
+    });
+    const result = await new DurableShellTaskStore(root).wait(taskId, 1);
+    await finalize;
+    expect(result).toMatchObject({ ok: true, value: { state: 'completed', exit_code: 0 } });
+  });
+
   it('keeps POSIX orphaned and unknown group reservations across restart, then recovers once without replay', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-posix-recovery-'));
     temporaryRoots.push(root);
