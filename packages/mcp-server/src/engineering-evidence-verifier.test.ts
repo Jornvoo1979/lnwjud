@@ -26,7 +26,8 @@ describe('RuntimeEngineeringEvidenceVerifier', () => {
         : [{ run_id: Number(runId), head_sha: commit, status: 'completed', conclusion: 'success', labels: ['windows-latest'] }];
       return JSON.stringify({ total_count: 101, jobs });
     };
-    const provider = createJobsProvider(async () => 'E:/workspace', runner);
+    const workspaceRoot = join(tmpdir(), 'lnwjud-gh-jobs-fixture');
+    const provider = createJobsProvider(async () => workspaceRoot, runner);
 
     const result = await provider('workspace-1', runId);
     expect(calls.map((call) => call.args)).toHaveLength(3);
@@ -34,9 +35,9 @@ describe('RuntimeEngineeringEvidenceVerifier', () => {
     expect(result?.jobs).toHaveLength(101);
     expect(result?.jobs[100]).toMatchObject({ runId, headSha: commit, labels: ['windows-latest'] });
     expect(calls).toEqual([
-      { cwd: 'E:/workspace', args: ['repo', 'view', '--json', 'nameWithOwner'] },
-      { cwd: 'E:/workspace', args: ['api', 'repos/owner/repo/actions/runs/36568935961/jobs?per_page=100&page=1'] },
-      { cwd: 'E:/workspace', args: ['api', 'repos/owner/repo/actions/runs/36568935961/jobs?per_page=100&page=2'] },
+      { cwd: workspaceRoot, args: ['repo', 'view', '--json', 'nameWithOwner'] },
+      { cwd: workspaceRoot, args: ['api', 'repos/owner/repo/actions/runs/36568935961/jobs?per_page=100&page=1'] },
+      { cwd: workspaceRoot, args: ['api', 'repos/owner/repo/actions/runs/36568935961/jobs?per_page=100&page=2'] },
     ]);
   });
 

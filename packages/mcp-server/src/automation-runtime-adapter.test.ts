@@ -27,7 +27,9 @@ function dispatchRequest(
 ): AutomationDispatchRequest {
   const dispatch = {
     executable: process.execPath,
-    arguments: ['-e', "setTimeout(() => process.stdout.write('automation-ok'), 40)"],
+    // Give the native worker time to persist its process identity before the
+    // direct child exits; the test verifies dispatch, not startup throughput.
+    arguments: ['-e', "setTimeout(() => process.stdout.write('automation-ok'), 500)"],
     cwd: root,
     timeoutSeconds: 30,
     maxOutputBytes: 1024,

@@ -226,7 +226,8 @@ internal sealed class ContainedProcess : IDisposable
             if (stopwatch.ElapsedMilliseconds >= timeoutMs || stdout.IsFaulted || stderr.IsFaulted) { child.Cancel(); throw new IOException("CONTAINMENT_CAPTURE_LIMIT"); }
             Thread.Sleep(10);
         }
-        if (!Task.WaitAll([stdout, stderr], 5000) || child.ExitCode != 0) throw new IOException("CONTAINMENT_CAPTURE_FAILED");
+        if (!Task.WaitAll([stdout, stderr], 5000)) throw new IOException("CONTAINMENT_CAPTURE_STDIO_UNDRAINED");
+        if (child.ExitCode != 0) throw new IOException("CONTAINMENT_CAPTURE_EXIT_" + child.ExitCode);
         return new UTF8Encoding(false, true).GetString(stdout.GetAwaiter().GetResult());
     }
     private static byte[] ReadBounded(Stream stream, int maximumBytes)

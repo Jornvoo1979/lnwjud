@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -19,7 +19,9 @@ async function fixture(version = 2): Promise<{
   root: string; directory: string; manifest: Record<string, unknown>;
   inspectControl: ReturnType<typeof vi.fn>; control: ReturnType<typeof vi.fn>; runtime: SecureRepositoryImportRuntime;
 }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-recovery-'));
+  // Hosted Windows runners can expose the TEMP parent through an 8.3 alias.
+  // The production import correctly refuses noncanonical workspace roots.
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-recovery-')));
   const directory = path.join(root, 'repository-imports', requestId); await mkdir(directory, { recursive: true });
   const originalInput = { request: { workspaceId: owner.workspaceId, requestId, url: 'https://example.invalid/repo.git', destination: 'published', commit }, owner, workspaceRoot: root };
   const requestDigest = createHash('sha256').update(JSON.stringify({ input: originalInput })).digest('hex');

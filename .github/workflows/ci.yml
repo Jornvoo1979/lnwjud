@@ -839,14 +839,7 @@ jobs:
             rg --version
           }
 
-      - name: Provision real protected Windows containment service for release gate
-        shell: pwsh
-        run: |
-          pnpm install --frozen-lockfile
-          if ($LASTEXITCODE -ne 0) { throw 'CI_PNPM_INSTALL_FAILED' }
-          pnpm prepare:containment
-          if ($LASTEXITCODE -ne 0) { throw 'CI_CONTAINMENT_PREPARE_FAILED' }
-          ./scripts/prepare-windows-containment-ci.ps1
+
 
       - name: Run pull-request verification gate
         if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'

@@ -192,6 +192,8 @@ describe('WslCapabilityBackend', () => {
     temporaryRoots.push(root);
     const parsedRoot = path.win32.parse(root);
     const linuxRoot = `/mnt/${parsedRoot.root[0]!.toLowerCase()}/${root.slice(parsedRoot.root.length).replaceAll('\\', '/')}`;
+    const canonicalRoot = await realpath(root);
+    const canonicalLinuxRoot = `/mnt/${parsedRoot.root[0]!.toLowerCase()}/${canonicalRoot.slice(parsedRoot.root.length).replaceAll('\\', '/')}`;
     const backend = new WslCapabilityBackend({
       platform: 'win32',
       runner: { execute: async (): Promise<Result<unknown>> => ok({}) },
@@ -214,7 +216,7 @@ describe('WslCapabilityBackend', () => {
     })).resolves.toMatchObject({
       ok: true,
       value: {
-        linux_cwd: linuxRoot,
+        linux_cwd: canonicalLinuxRoot,
         workspace_id: 'ws-1',
         distro: 'Ubuntu',
       },
