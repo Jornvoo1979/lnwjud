@@ -41,6 +41,12 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup .NET 8 containment compiler
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Setup pnpm 10.15.0
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
@@ -50,6 +56,9 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare trusted containment runtime
+        run: pnpm prepare:containment
 
       - name: Run version contract
         shell: bash
@@ -93,6 +102,10 @@ jobs:
       - name: Run native platform contract tests
         shell: bash
         run: pnpm exec vitest run tests/integration/platform-composition.test.ts tests/integration/cross-platform-release-scenarios.test.ts tests/release/platform-support-contract.test.ts packages/mcp-server/src/tool-runtime-contract.test.ts
+
+      - name: Test Windows containment native failure boundaries
+        if: matrix.name == 'Windows'
+        run: dotnet run --project native/windows-containment-helper/tests/ContainmentNativeTests.csproj -c Release
 
       - name: Run complete native unit and service acceptance suites
         shell: bash
@@ -159,6 +172,12 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup .NET 8 containment compiler
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Setup pnpm 10.15.0
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
@@ -168,6 +187,9 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare trusted containment runtime
+        run: pnpm prepare:containment
 
       - name: Build workspace packages used by desktop acceptance tests
         shell: bash
@@ -215,6 +237,12 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup .NET 8 containment compiler
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Install cosign for tunnel provenance verification
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
@@ -229,6 +257,9 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare trusted containment runtime
+        run: pnpm prepare:containment
 
       - name: Install Linux packaging and Electron smoke prerequisites
         if: matrix.platform == 'linux'
@@ -436,6 +467,12 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup .NET 8 containment compiler
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Setup pnpm 10.15.0
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
@@ -445,6 +482,9 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare trusted containment runtime
+        run: pnpm prepare:containment
 
       - name: Download exact macOS 15 package artifact
         uses: actions/download-artifact@v8
@@ -640,6 +680,12 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup .NET 8 containment compiler
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Setup pnpm 10.15.0
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
@@ -648,6 +694,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare trusted containment runtime
+        run: pnpm prepare:containment
 
       - name: Build workspace type declarations
         run: pnpm typecheck
@@ -686,6 +735,12 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+
+      - name: Setup .NET 8 containment compiler
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Install cosign for tunnel provenance verification
         id: cosign_action

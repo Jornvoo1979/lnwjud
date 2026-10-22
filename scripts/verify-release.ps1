@@ -64,6 +64,7 @@ try {
     Assert-RepositoryChecks
     Invoke-ReleaseStage 'install --frozen-lockfile' @('install', '--frozen-lockfile')
     Invoke-ReleaseStage 'test:version' @('test:version')
+    Invoke-ReleaseStage 'prepare:containment' @('prepare:containment')
     Invoke-ReleaseStage 'lint' @('lint')
     Invoke-ReleaseStage 'typecheck' @('typecheck')
     if ($SkipWorkspaceTests) {

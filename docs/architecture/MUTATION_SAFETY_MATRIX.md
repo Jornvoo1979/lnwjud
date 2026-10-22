@@ -201,6 +201,15 @@ The database runtime rejects DML/DDL such as `DELETE`, `UPDATE`, `DROP`, and mul
 
 `self_heal_apply` regenerates evidence and requires the caller's `planId` to match before applying each selected fix once. It reports `automaticDestructiveRetry: false`. `tool_batch` dispatches every child back through `ToolRegistry.invoke`: in standard mode each child keeps its own scope/confirmation/host/command checks; while the transport is in Full Bypass, each child independently recomputes the same trusted bypass mode. A successful batch envelope is not a blanket child-success certificate: callers must inspect `summary.succeeded`, `summary.failed` and `results[].status`. Since v5.8.7, if **zero** children succeed, `tool_batch` sets outer MCP `isError=true` while preserving every child result; mixed batches keep partial success. Connection and `mcp_describe` do not prove a directly invoked child will succeed; direct `mcp_call` requires `userConfirmed: true` and trusted host approval in standard mode regardless of the child tool's advertised read-only labels.
 
+## v5.9.0 engineering delivery and recovery (#213, #214)
+
+| Tool | Mutation and authority | Evidence and retry boundary |
+| --- | --- | --- |
+| `engineering_build_artifact` | Executes one host-managed build after the current goal lease, intent revision, delivery contract, and source snapshot are checked. The output must use a fresh unique path inside the workspace. | The observation ID reserves one attempt. A retry cannot launch another command, and an existing artifact is rejected before dispatch. |
+| `engineering_complete_build` | Persists a signed app-owned receipt only after the host confirms successful process termination and verifies the unchanged source, intent, contract, and fresh artifact. | Receipt resolution is idempotent only for the exact captured attempt. An unknown attempt after restart cannot be adopted or replayed. |
+| `engineering_upload_worker` | Creates a remote Cloudflare Worker version from the exact signed captured artifact and host-held credential; it does not shift live traffic. The current goal lease and contract target remain required. | One upload dispatch is followed by version-ID and script-etag readback. An unresolved upload is not retried automatically because the remote side effect may already have succeeded. |
+| `recover_blocked_goal` | Reopens only the same terminal blocked goal for its owner, using explicit user confirmation and the current revision. Recovery rechecks effective policy, stable source identity, and prior blocking-task liveness before issuing a fresh lease. | Completed, cancelled, superseded, stale-revision, or untrustworthy-liveness cases remain closed; recovery does not create a schedule. |
+
 ## Primitive inventory audit
 
 | Class | Reviewed production examples | Safety disposition |

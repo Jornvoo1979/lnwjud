@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -221,6 +221,34 @@ describe('WslCapabilityBackend', () => {
     });
   });
 
+  it.skipIf(process.platform !== 'win32')('uses the real Windows junction target for both scoped preview and forwarded Linux cwd', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-wsl-junction-'));
+    temporaryRoots.push(root);
+    const target = path.join(root, 'Actual');
+    const link = path.join(root, 'link');
+    await mkdir(target);
+    await symlink(target, link, 'junction');
+    const canonicalTarget = await realpath(target);
+    const linuxPath = (value: string): string => `/mnt/${value[0]!.toLowerCase()}${value.slice(2).replaceAll('\\', '/')}`;
+    const calls: unknown[] = [];
+    const backend = new WslCapabilityBackend({
+      platform: 'win32', allowedRoots: [root],
+      runner: { execute: async (input): Promise<Result<unknown>> => { calls.push(input); return ok({}); } },
+    });
+    const request = {
+      workspaceId: 'ws', distro: 'Ubuntu', executable: 'pwd', cwd: linuxPath(link),
+      metadata: { 'lnwjud.activeWorkspaceRoot.v1': root },
+    };
+    await expect(backend.execute({ ...request, dry_run: true })).resolves.toMatchObject({
+      ok: true, value: { linux_cwd: linuxPath(canonicalTarget) },
+    });
+    await expect(backend.execute(request)).resolves.toMatchObject({ ok: true });
+    expect(calls).toEqual([expect.objectContaining({
+      cwd: canonicalTarget,
+      arguments: ['--distribution', 'Ubuntu', '--cd', linuxPath(canonicalTarget), '--exec', 'pwd'],
+    })]);
+  });
+
   it('rejects shell-string flags, workspace escapes, and cross-workspace task access', async () => {
     const runner: CapabilityBackend = { execute: async (): Promise<Result<unknown>> => ok({ task_id: 'task-1', state: 'running' }) };
     const backend = new WslCapabilityBackend({ platform: 'win32', runner, allowedRoots: ['C:\\workspace'] });
@@ -266,6 +294,27 @@ describe('WslCapabilityBackend', () => {
 });
 
 describe('WslFilesystemCapabilityBackend', () => {
+  it.skipIf(process.platform !== 'win32')('authorizes canonical Windows junction targets before reading file metadata without Active Project', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-wsl-metadata-'));
+    const outside = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-wsl-private-'));
+    temporaryRoots.push(root, outside);
+    const actual = path.join(root, 'Actual');
+    await mkdir(actual);
+    await writeFile(path.join(actual, 'file.txt'), 'hello');
+    await writeFile(path.join(outside, 'secret.txt'), 'private');
+    await symlink(actual, path.join(root, 'inside'), 'junction');
+    await symlink(outside, path.join(root, 'escape'), 'junction');
+    const backend = new WslFilesystemCapabilityBackend({ platform: 'win32', allowedRoots: [root] });
+    await expect(backend.execute({
+      workspaceId: 'ws', operation: 'metadata', direction: 'windows_to_wsl', path: path.join(root, 'escape', 'secret.txt'),
+    })).resolves.toMatchObject({ ok: false, error: { code: 'PATH_OUTSIDE_WORKSPACE' } });
+    await expect(backend.execute({
+      workspaceId: 'ws', operation: 'metadata', direction: 'windows_to_wsl', path: path.join(root, 'inside', 'file.txt'),
+    })).resolves.toMatchObject({
+      ok: true, value: { windows_path: await realpath(path.join(actual, 'file.txt')), exists: true, kind: 'file', size: 5, raw_access: false },
+    });
+  });
+
   it('cuts WSL filesystem translation on POSIX hosts before parsing Windows paths', async () => {
     const backend = new WslFilesystemCapabilityBackend({ platform: 'darwin', allowedRoots: ['C:\\workspace'] });
 

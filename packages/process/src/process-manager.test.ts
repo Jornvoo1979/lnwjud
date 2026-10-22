@@ -15,6 +15,51 @@ async function waitForState(manager: ProcessManager, processId: string, state: s
 }
 
 describe('ProcessManager', () => {
+  it('holds completion until group zero and an awaited release callback succeeds, then recovers without replay', async () => {
+    let empty = false;
+    let allowRelease!: () => void;
+    const gate = new Promise<void>((resolve) => { allowRelease = resolve; });
+    const released = vi.fn(async () => { await gate; });
+    const manager = new ProcessManager(undefined, undefined, undefined, undefined, undefined, undefined,
+      async () => empty ? { state: 'empty' } : { state: 'live', livePids: [4243] });
+    const started = await manager.start({ executable: process.execPath, args: ['-e', 'process.exit(0)'], cwd: process.cwd() }, undefined, undefined, released);
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await waitForState(manager, started.value.processId, 'termination_unverified');
+    expect(released).not.toHaveBeenCalled();
+    empty = true;
+    await vi.waitFor(() => expect(released).toHaveBeenCalledTimes(1));
+    expect(manager.status(started.value.processId)).toMatchObject({ ok: true, value: { state: 'termination_unverified' } });
+    allowRelease();
+    await waitForState(manager, started.value.processId, 'exited');
+    expect(released).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains admission after a release failure and retries verified completion', async () => {
+    const released = vi.fn().mockRejectedValueOnce(new Error('index unavailable')).mockResolvedValue(undefined);
+    const manager = new ProcessManager(undefined, undefined, undefined, undefined, undefined, undefined, async () => ({ state: 'empty' }));
+    const started = await manager.start({ executable: process.execPath, args: ['-e', 'process.exit(0)'], cwd: process.cwd() }, undefined, undefined, released);
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await waitForState(manager, started.value.processId, 'exited');
+    expect(released).toHaveBeenCalledTimes(2);
+  });
+
+  it.skipIf(process.platform === 'win32').each([false, true])('does not release an ordinary parent exit while inherited pipes remain open (detached descendant: %s)', async (detached) => {
+    const released = vi.fn();
+    const manager = new ProcessManager();
+    const childScript = "setTimeout(() => process.stdout.write('descendant-finished'), 1500)";
+    const parentScript = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], { detached: ${detached}, stdio: ['ignore', 1, 2] }).unref();`;
+    const started = await manager.start({ executable: process.execPath, args: ['-e', parentScript], cwd: process.cwd() }, undefined, undefined, released);
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await waitForState(manager, started.value.processId, 'termination_unverified');
+    expect(released).not.toHaveBeenCalled();
+    await waitForState(manager, started.value.processId, 'exited');
+    expect(manager.logs(started.value.processId, {})).toMatchObject({ ok: true, value: { entries: expect.arrayContaining([expect.objectContaining({ text: 'descendant-finished' })]) } });
+    expect(released).toHaveBeenCalledTimes(1);
+  });
+
   it('captures stdout/stderr and retains a managed process handle', async () => {
     const manager = new ProcessManager();
     const started = await manager.start({

@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SqliteWorkspaceWriterLease } from './workspace-writer-lease.js';
+import { appError } from '@lnwjud/domain';
+import { SqliteWorkspaceWriterLease, type WorkspaceWriterGlobalExclusion } from './workspace-writer-lease.js';
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true }))); });
@@ -19,6 +20,37 @@ async function fixture(now?: () => number): Promise<{ one: SqliteWorkspaceWriter
 }
 
 describe('durable multi-session workspace writer lease', () => {
+  it('refuses release during native writer activity instead of creating an unleased mutation window', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-release-native-block-'));
+    roots.push(root);
+    let nativeBusy = false;
+    let probeCalls = 0;
+    const exclusion = {
+      async holdExclusiveProbe(): ReturnType<WorkspaceWriterGlobalExclusion['holdExclusiveProbe']> {
+        probeCalls += 1;
+        return nativeBusy
+          ? { ok: false as const, error: appError('CONFLICT', 'Native writer is still active') }
+          : { ok: true as const, value: { releaseAfterVerifiedTermination: async (): Promise<void> => undefined } };
+      },
+    };
+    const lease = new SqliteWorkspaceWriterLease(path.join(root, 'fences.sqlite'), Date.now, exclusion);
+    const acquired = await lease.acquire('workspace', 'owner', 'session', 60);
+    expect(acquired.ok).toBe(true);
+    if (!acquired.ok) return;
+    nativeBusy = true;
+    const beforeReleaseProbes = probeCalls;
+    expect(await lease.release('workspace', 'owner', 'session', acquired.value)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(probeCalls).toBe(beforeReleaseProbes + 1);
+    expect(await lease.inspect('workspace')).toMatchObject({ ok: true, value: { state: 'active' } });
+    expect(await lease.begin('workspace', 'other-owner', 'other-session', 'unleased-mutation'))
+      .toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(await lease.acquire('workspace', 'other-owner', 'other-session', 60))
+      .toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    nativeBusy = false;
+    expect(await lease.release('workspace', 'owner', 'session', acquired.value)).toMatchObject({ ok: true });
+    expect(await lease.inspect('workspace')).toMatchObject({ ok: true, value: { state: 'unleased' } });
+  });
+
   it('prevents a lease from racing a mutation admitted while no lease existed', async () => {
     const { one, two } = await fixture();
     const admitted = await one.begin('workspace', 'unleased-client', 'session-one', 'unleased-call');

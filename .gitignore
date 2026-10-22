@@ -17,6 +17,10 @@ native/linux-host/target/
 native/macos-host/.build/
 native/windows-secret-migrator/bin/
 native/windows-secret-migrator/obj/
+native/windows-containment-helper/obj/
+native/windows-containment-helper/bin/
+native/windows-containment-helper/tests/obj/
+native/windows-containment-helper/tests/bin/
 native/windows-ocr/bin/
 native/windows-ocr/obj/
 *.tsbuildinfo
@@ -68,6 +72,7 @@ docs/
 docs/*
 !docs/CHATGPT_LONG_SESSION.md
 !docs/USAGE_TH.md
+!docs/PONYTAIL.md
 !docs/mcp/
 docs/mcp/*
 !docs/mcp/MCP_TASKS.md
@@ -99,6 +104,7 @@ apps/desktop/build/packaged-runtime-evidence.json
 apps/desktop/build/platform-verification-*.json
 apps/desktop/build/capability-bridge/
 apps/desktop/build/native-host/
+apps/desktop/build/native-containment/
 !docs/benchmarks/
 docs/benchmarks/*
 !docs/benchmarks/BASELINE.md

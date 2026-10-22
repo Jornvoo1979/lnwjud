@@ -1372,6 +1372,7 @@ function normalizeActiveWorkspaceScopesProvider(options: ActiveWorkspaceScopeOpt
 const NATIVE_ACTIVE_SCOPE_TOOLS = new Set(['dom_cdp', 'office', 'audio', 'screen_record', ...OFFICE_SEMANTIC_TOOL_NAMES]);
 const COMMAND_EXECUTION_TOOLS = new Set(['shell', 'wsl_exec', 'process_start']);
 export const SCHEDULED_CONTINUATION_FENCED_TOOLS = new Set([
+  'engineering_build_artifact', 'engineering_complete_build', 'engineering_upload_worker',
   'workspace_register', 'write_file', 'apply_patch', 'edit_file', 'move_file', 'copy_file', 'delete_file',
   'restore_deleted_file', 'restore_checkpoint', 'lsp_rename', 'git', 'git_clone_safe', 'git_clone_cancel', 'shell', 'wsl_exec',
   'process_start', 'process_stop', 'project_dev', 'project_test', 'project_lint', 'project_typecheck', 'project_build',
@@ -1499,6 +1500,7 @@ function readWorkspaceWriterLeaseProof(input: unknown): WorkspaceWriterLeaseProo
 }
 
 function withGoalLeaseEnvelope(tool: McpToolDefinition): McpToolDefinition {
+  if (['engineering_build_artifact', 'engineering_complete_build', 'engineering_upload_worker'].includes(tool.name)) return tool;
   if (!SCHEDULED_CONTINUATION_FENCED_TOOLS.has(tool.name)) return tool;
   const extendObjectSchema = (schema: z.ZodObject): z.ZodObject =>
     schema.safeExtend({ goalLease: goalLeaseProofSchema.optional() });
@@ -1842,7 +1844,7 @@ function summarizeMutationForApproval(toolName: string, input: unknown, activeWo
       lines.push(`launchCount = ${taskIds.length}`);
       if (taskIds.length > 0) lines.push(`taskIds = ${JSON.stringify(taskIds)}`);
     }
-    lines.push('WARNING: this consumes explicitly enabled Codex quota; v5.8.7 enforces read-only child sandboxes.');
+    lines.push('WARNING: this consumes explicitly enabled Codex quota; v5.9.0 enforces read-only child sandboxes.');
     return boundedApprovalSummary(lines);
   }
   const projectKind = projectCommandKind(toolName);

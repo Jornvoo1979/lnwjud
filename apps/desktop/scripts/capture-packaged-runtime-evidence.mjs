@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { verifyCapabilityBridgeArtifacts } from './verify-capability-bridge-artifacts.mjs';
+import { verifyContainmentArtifacts } from './verify-containment-artifacts.mjs';
 import {
   readMacosSigningPolicyEvidence,
   validateMacosSigningPolicyEvidence,
@@ -20,6 +21,10 @@ const TARGETS = Object.freeze({
     required: Object.freeze([
       ['lnwjud.exe', 'lnwjud.exe'],
       ['lnwjud-mcp-stdio.cmd', 'lnwjud-mcp-stdio.cmd'],
+      ['containment-helper', 'resources/native-containment/lnwjud-containment.exe'],
+      ['containment-pin', 'resources/native-containment/lnwjud-containment-pin.node'],
+      ['containment-manifest', 'resources/native-containment/manifest.json'],
+      ['containment-runtime', 'resources/native-containment/process-runtime.mjs'],
       ['windows-capability-bridge.ps1', 'resources/windows-capability-bridge.ps1'],
       ['windows-capability-bridge.sha256', 'resources/windows-capability-bridge.sha256'],
       ['windows-capability-bridge.integrity.json', 'resources/windows-capability-bridge.integrity.json'],
@@ -34,6 +39,7 @@ const TARGETS = Object.freeze({
     required: Object.freeze([
       ['lnwjud', 'Contents/MacOS/lnwjud'],
       ['lnwjud-mcp-stdio', 'Contents/Resources/lnwjud-mcp-stdio'],
+      ['containment-runtime', 'Contents/Resources/native-containment/process-runtime.mjs'],
       ['rg', 'Contents/Resources/runtime-tools/ripgrep/rg'],
       ['rg-manifest', 'Contents/Resources/runtime-tools/ripgrep/BUNDLED_RIPGREP.json'],
       ['tunnel-client', 'Contents/Resources/tunnel-client/tunnel-client'],
@@ -46,6 +52,7 @@ const TARGETS = Object.freeze({
     required: Object.freeze([
       ['lnwjud', 'lnwjud'],
       ['lnwjud-mcp-stdio', 'lnwjud-mcp-stdio'],
+      ['containment-runtime', 'resources/native-containment/process-runtime.mjs'],
       ['rg', 'resources/runtime-tools/ripgrep/rg'],
       ['rg-manifest', 'resources/runtime-tools/ripgrep/BUNDLED_RIPGREP.json'],
       ['tunnel-client', 'resources/tunnel-client/tunnel-client'],
@@ -106,6 +113,11 @@ export async function collectPackagedRuntimeEvidence(context, { allowIncompleteM
     }
     files.push({ name, relativePath: resolvedRelativePath, sizeBytes: metadata.size, sha256: await sha256File(absolutePath) });
   }
+  const containment = await verifyContainmentArtifacts({
+    directory: resolvePackagedPath(appOutDir, platform, `${platform === 'darwin' ? 'Contents/Resources' : 'resources'}/native-containment`),
+    compiledBundlePath: path.join(desktopRoot, 'dist', 'main', 'main.js'),
+    platform,
+  });
 
   let signing;
   if (platform === 'darwin') {
@@ -131,7 +143,7 @@ export async function collectPackagedRuntimeEvidence(context, { allowIncompleteM
       ...(policy ? { policy } : {}),
     };
   }
-  return { schemaVersion: 1, platform, arch, capabilityBridge, files, ...(signing ? { signing } : {}) };
+  return { schemaVersion: 1, platform, arch, capabilityBridge, containment, files, ...(signing ? { signing } : {}) };
 }
 
 async function assertRegularCanonicalFile(filePath, label) {

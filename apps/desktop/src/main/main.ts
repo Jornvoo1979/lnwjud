@@ -1,3 +1,4 @@
+import { isEngineeringWorkerTarget } from '@lnwjud/shared';
 import { app, BrowserWindow, clipboard, ClipboardItem, crashReporter, desktopCapturer, dialog, ipcMain, Menu, nativeImage, net, Notification, safeStorage, screen, shell, Tray, type IpcMainInvokeEvent } from 'electron';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
@@ -1474,12 +1475,14 @@ function ponytailModeField(value: unknown): 'off' | 'lite' | 'full' | 'ultra' {
 
 function engineeringHarnessSettingsField(value: unknown): NonNullable<UserSettings['engineeringHarness']> {
   if (!isRecord(value)
-    || Object.keys(value).some((key) => !['schemaVersion', 'enabled', 'profile', 'applyTo', 'autoProjectAssessment', 'custom'].includes(key))
+    || Object.keys(value).some((key) => !['schemaVersion', 'enabled', 'profile', 'applyTo', 'autoProjectAssessment', 'custom', 'hostedCi', 'allowNoGit', 'workerTarget'].includes(key))
     || value.schemaVersion !== 1
     || typeof value.enabled !== 'boolean'
     || (value.profile !== 'standard' && value.profile !== 'senior' && value.profile !== 'strict' && value.profile !== 'custom')
     || (value.applyTo !== 'coding_projects' && value.applyTo !== 'all_workspaces')
     || typeof value.autoProjectAssessment !== 'boolean') throw new Error('Invalid IPC payload: engineeringHarness');
+  if ((value.hostedCi !== undefined && value.hostedCi !== 'required' && value.hostedCi !== 'local_only') || (value.allowNoGit !== undefined && typeof value.allowNoGit !== 'boolean')) throw new Error('Invalid Engineering delivery policy');
+  if (value.workerTarget !== undefined && !isEngineeringWorkerTarget(value.workerTarget)) throw new Error('Invalid Engineering Worker target');
   const custom = value.custom;
   if (custom !== undefined && (!isRecord(custom)
     || Object.keys(custom).some((key) => !['analysis', 'review', 'validation', 'docsImpactCheck'].includes(key))
@@ -1493,6 +1496,9 @@ function engineeringHarnessSettingsField(value: unknown): NonNullable<UserSettin
     profile: value.profile,
     applyTo: value.applyTo,
     autoProjectAssessment: value.autoProjectAssessment,
+    ...(value.workerTarget === undefined || !isEngineeringWorkerTarget(value.workerTarget) ? {} : { workerTarget: value.workerTarget }),
+    ...(value.hostedCi === undefined ? {} : { hostedCi: value.hostedCi }),
+    ...(value.allowNoGit === undefined ? {} : { allowNoGit: value.allowNoGit }),
     ...(custom === undefined ? {} : { custom: {
       analysis: custom.analysis as 'focused' | 'cross_file',
       review: custom.review as 'risk_based' | 'always',
@@ -2015,6 +2021,7 @@ function bootstrapMcpStdio(): void {
       hostMutationApprovalProvider: requestMutationApproval,
       nativeCapabilityApi: createElectronNativeCapabilityApi(() => null),
       eccRuntimeOptions: resolveDesktopEccRuntimeOptions(),
+      nativeContainmentDirectory: app.isPackaged ? path.join(process.resourcesPath, 'native-containment') : path.join(app.getAppPath(), 'build', 'native-containment'),
       ...secrets,
       watchToolAvailability: true,
     });
@@ -2572,6 +2579,7 @@ async function createNativeDesktopRuntime(dataPath: string): Promise<DesktopRunt
     ...secrets,
     nativeCapabilityApi: createElectronNativeCapabilityApi(() => mainWindow),
     eccRuntimeOptions: resolveDesktopEccRuntimeOptions(),
+    nativeContainmentDirectory: app.isPackaged ? path.join(process.resourcesPath, 'native-containment') : path.join(app.getAppPath(), 'build', 'native-containment'),
     collectIncidentMemory,
     captureRuntimeDiagnostics: () => { runtimeDiagnosticsHistory?.captureNow(); },
     ...(desktopLogSession === null ? {} : {

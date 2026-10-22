@@ -366,7 +366,7 @@ async function waitForTerminalShellTask(
       arguments: { operation: 'wait', workspaceId, task_id: taskId, timeout_seconds: 2 },
     });
     const state = structuredRecord(response).state;
-    if (state !== 'running' && state !== 'queued') return response;
+    if (state !== 'starting' && state !== 'running' && state !== 'queued') return response;
   }
   throw new Error(`Timed out waiting for shell task ${taskId}`);
 }

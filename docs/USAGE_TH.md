@@ -1,10 +1,16 @@
-# คู่มือใช้งาน lnwjud v5.8.7 (ภาษาไทย)
+# คู่มือใช้งาน lnwjud v5.9.0 (ภาษาไทย)
 
 lnwjud คือ cross-platform local AI-agent runtime / MCP gateway สำหรับให้ ChatGPT, Codex และ MCP client อื่นทำงานกับเครื่องของคุณ เช่น อ่าน/ค้น/แก้ไฟล์, Git, รันโปรเซส และเครื่องมือพัฒนาอื่น ๆ โดยงานจริงยังทำบนเครื่องของคุณ ความสามารถ Windows-only เช่น WSL, Registry และ Windows Sandbox จะไม่แสดงเป็นพร้อมใช้งานบน macOS/Linux
 
-คู่มือนี้อัปเดตตาม source `v5.8.7`; public release `v5.8.7` คือรุ่นที่เผยแพร่แล้วบน [GitHub Releases](https://github.com/engasnm111/lnwjud/releases/tag/v5.8.7)
+คู่มือนี้อัปเดตตาม source `v5.9.0`; public release `v5.8.7` คือรุ่นที่เผยแพร่แล้วบน [GitHub Releases](https://github.com/engasnm111/lnwjud/releases/tag/v5.8.7)
 
 > สำหรับผู้ใช้ package ของ lnwjud **ไม่ต้องติดตั้ง Node.js และไม่ต้องดาวน์โหลด `tunnel-client` เอง** ตัว build จาก source `v5.8.1` รวม official OpenAI `tunnel-client v0.0.16` ที่ตรงกับ OS/architecture พร้อม SHA-256/provenance ส่วน release รุ่นก่อนหน้าอาจ bundle เวอร์ชันต่างกัน ให้ยึดหลักฐานของไฟล์ที่ดาวน์โหลดจริง
+
+## Ponytail สำหรับงานเขียนโค้ด (รวมใน Source v5.9.0)
+
+Source รุ่น v5.9.0 มี Skill แบบเอกสารของ [Ponytail v5.3.2](https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2) รุ่น Stable ล่าสุด ณ 21 ตุลาคม 2026 ครบ 6 รายการ ได้แก่ `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain` และ `ponytail-help` โดยตรึง Commit และ MIT License เพื่อให้ตรวจสอบแหล่งที่มาได้ ไม่ติดตั้ง Hook หรือสคริปต์ภายนอกโดยอัตโนมัติ
+
+โหมดเริ่มต้นคือ **OFF** ผู้ใช้เลือก Lite, Full หรือ Ultra ได้ผ่านการตั้งค่าที่รองรับ โดยลำดับการตั้งค่าคือ **Goal > Workspace > Global** โหมด Ponytail ไม่ข้าม Writer Lease หรือข้อบังคับความปลอดภัย การทดสอบการทำงานบนแพ็กเกจที่ติดตั้งยังเป็นส่วนหนึ่งของ Release Acceptance v5.9.0 และ **ไม่ได้ถือว่าผ่าน** เพียงเพราะมี Skill อยู่ใน Source อ่านรายละเอียดได้ใน [คู่มือ Ponytail](PONYTAIL.md)
 
 คู่มือ target ใหม่:
 
@@ -447,8 +453,8 @@ corepack pnpm@10.15.0 package:windows
 ไฟล์ที่ได้จะอยู่ที่:
 
 ```text
-apps/desktop/dist/installers/lnwjud-Setup-5.8.7.exe
-apps/desktop/dist/installers/lnwjud-Portable-5.8.7.exe
+apps/desktop/dist/installers/lnwjud-Setup-5.9.0.exe
+apps/desktop/dist/installers/lnwjud-Portable-5.9.0.exe
 apps/desktop/dist/installers/latest.yml
 apps/desktop/dist/installers/portable.yml
 ```

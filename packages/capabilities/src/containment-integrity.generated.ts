@@ -1,0 +1,3 @@
+export const CONTAINMENT_HELPER_SHA256 = 'b35992d94ccd8fdeabab6de29abbf0d37e0a5b5997ccb8a0bd18dfb6d6e403a8' as const;
+export const CONTAINMENT_PIN_SHA256 = '2bce3428ad0e69b4fd28ff7c827ee45296f4ac7d5b520a7cc17ecb7da0d39e5c' as const;
+export const CONTAINMENT_RUNTIME_SHA256 = '0c67e23404f0f82f9e7b1f51c5c6b2325c18dec6cb3707efef8102058d99e49f' as const;

@@ -6,6 +6,7 @@ import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validateMacosSigningPolicyEvidence } from './inspect-macos-signing-policy.mjs';
+import { validateContainmentEvidence } from './verify-containment-artifacts.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(desktopRoot, '..', '..');
@@ -33,6 +34,7 @@ const platform = normalizePlatform(process.env.LNWJUD_RELEASE_PLATFORM ?? runtim
 if (runtimeEvidence.platform !== platform) throw new Error(`Runtime evidence platform mismatch: ${String(runtimeEvidence.platform)} != ${platform}`);
 const capabilityBridge = platform === 'win32' ? validateCapabilityBridge(runtimeEvidence) : null;
 const macSigning = platform === 'darwin' ? validateMacSigning(runtimeEvidence) : null;
+const containment = validateContainmentEvidence(runtimeEvidence.containment, runtimeEvidence.files, platform);
 
 const artifactNames = expectedArtifactNames(platform, version, runtimeEvidence.arch);
 const artifacts = [];
@@ -66,6 +68,7 @@ const provenance = {
     workingTreeDirtyAtEvidence,
   },
   capabilityBridge,
+  containment,
   artifacts,
   runtime: runtimeEvidence.files,
 };

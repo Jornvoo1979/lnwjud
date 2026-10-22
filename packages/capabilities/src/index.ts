@@ -48,6 +48,8 @@ export {
 export {
   CAPABILITY_ACTIVE_WORKSPACE_ROOT_METADATA_KEY,
   CAPABILITY_TASK_OWNER_METADATA_KEY,
+  capabilityTaskOwnerCanInspect,
+  capabilityTaskOwnerCanRecover,
   capabilityTaskOwnerMatches,
   legacyCapabilityTaskOwner,
   readCapabilityActiveWorkspaceRoot,
@@ -101,3 +103,4 @@ export {
 export { WINDOWS_CAPABILITY_BRIDGE_SHA256, WINDOWS_CAPABILITY_BRIDGE_SIZE_BYTES } from './windows-capability-integrity.generated.js';
 export { BoundedEventBuffer, type BufferedEvent, type EventPage } from './bounded-event-buffer.js';
 export { resolveNativeHostBridge } from './native-host-resolver.js';
+export { createHostWindowsNativeAuthority, createHostPosixProcessRuntime } from './host-native-authority.js';

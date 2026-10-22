@@ -172,9 +172,9 @@ export class TunnelRuntimeAdapter {
 
   /**
    * Remove only a confirmed stopped lnwjud local alias. The official v0.0.16
-   * "runtimes rm" also removes the profile/log/health files, so snapshot and
-   * restore the exact owned files before reporting success. It never deletes
-   * the remote tunnel, never calls "stop", and never targets another alias.
+   * "runtimes rm" also removes profile and health files, so snapshot and restore
+   * those owned files. It leaves the shared Desktop history log untouched and
+   * never deletes the remote tunnel, calls "stop", or targets another alias.
    */
   public async retireStoppedAlias(expectedTunnelId: string): Promise<void> {
     if (this.alias !== TUNNEL_RUNTIME_ALIAS || !/^tunnel_[A-Za-z0-9_-]{8,128}$/.test(expectedTunnelId)) {
@@ -199,7 +199,6 @@ export class TunnelRuntimeAdapter {
     }
     const paths = [
       path.join(directory, 'lnwjud.yaml'),
-      path.join(directory, 'lnwjud-tunnel.log'),
       path.join(directory, 'lnwjud.runtime.secret'),
       path.join(directory, 'lnwjud.oauth.session.secret'),
     ];

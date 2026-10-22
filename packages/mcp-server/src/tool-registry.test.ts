@@ -317,7 +317,7 @@ describe('MCP tool registry', () => {
   it('returns the exact deterministic tool order', () => {
     const registry = new ToolRegistry({}, actor);
     expect(registry.list().map((tool) => tool.name)).toEqual([
-      'workspace_list', 'workspace_path_preflight', 'workspace_writer_lease_acquire', 'workspace_writer_lease_status', 'workspace_writer_lease_renew', 'workspace_writer_lease_release', 'workspace_register', 'workspace_info', 'workspace_tree', 'project_snapshot', 'engineering_prepare_task', 'engineering_start_task', 'engineering_get_status', 'read_file', 'read_files',
+      'workspace_list', 'workspace_path_preflight', 'workspace_writer_lease_acquire', 'workspace_writer_lease_status', 'workspace_writer_lease_renew', 'workspace_writer_lease_release', 'workspace_register', 'workspace_info', 'workspace_tree', 'project_snapshot', 'engineering_prepare_task', 'engineering_start_task', 'engineering_get_status', 'engineering_build_artifact', 'engineering_complete_build', 'engineering_upload_worker', 'read_file', 'read_files',
       'search_files', 'search_text', 'git_status', 'git_diff', 'git_log', 'git_clone_safe', 'git_clone_status', 'git_clone_cancel', 'git', 'write_file',
       'apply_patch', 'edit_file', 'move_file', 'copy_file', 'delete_file', 'list_recovery_items', 'restore_deleted_file', 'list_checkpoints', 'restore_checkpoint', 'process_start', 'process_list', 'process_status',
       'process_logs', 'process_stop', 'project_dev', 'project_test', 'project_lint',
@@ -331,7 +331,7 @@ describe('MCP tool registry', () => {
       'read_file_page', 'read_file_page_continue',
       'workspace_index', 'workspace_index_status', 'workspace_index_watch', 'workspace_index_stop',
       'session_handoff', 'verify_incremental',
-      'run_goal', 'get_goal', 'get_goal_plan', 'update_goal_plan', 'update_goal_acceptance', 'revise_goal_intent',
+      'recover_blocked_goal', 'run_goal', 'get_goal', 'get_goal_plan', 'update_goal_plan', 'update_goal_acceptance', 'revise_goal_intent',
       'create_context_capsule', 'get_context_capsule', 'list_context_capsules', 'context_pressure', 'record_delivery_receipt', 'list_delivery_receipts', 'advance_goal_iteration',
       'checkpoint_goal', 'checkpoint_goal_engineering', 'finish_goal', 'cancel_goal', 'reconcile_goals', 'list_goals',
       'resource_snapshot', 'call_history', 'goal_result', 'workflow_templates', 'workflow_prepare', 'workflow_start',
