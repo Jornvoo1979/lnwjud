@@ -238,7 +238,11 @@ internal static class NativeTests
                 using var helper = Process.Start(new ProcessStartInfo(Executable) { ArgumentList = { "crash", stage, marker }, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true }) ?? throw new Exception("Fault helper unavailable");
                 var stdout = helper.StandardOutput.ReadToEndAsync(); var stderr = helper.StandardError.ReadToEndAsync();
                 if (!helper.WaitForExit(20000)) { helper.Kill(true); throw new Exception("Fault helper did not exit"); }
-                Task.WaitAll(stdout, stderr);
+                // A suspended escaped target can inherit the crashing helper's pipe and
+                // keep ReadToEnd open forever. Fail this native security test rather
+                // than hiding the containment leak behind an unbounded wait.
+                if (!Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(8)))
+                    throw new Exception("FAULT_HELPER_STDIO_HANDLES_REMAIN_OPEN_AFTER_EXIT");
                 if (helper.ExitCode == 0) throw new Exception("Fault helper returned success");
                 if (!int.TryParse(stdout.Result.Trim(), out var targetPid)) throw new Exception("Fault target identity missing");
                 try { using var target = Process.GetProcessById(targetPid); if (!target.WaitForExit(5000)) throw new Exception("Suspended target survived helper crash"); } catch (ArgumentException) { }
@@ -1048,9 +1052,12 @@ internal static class NativeTests
                     Thread.Sleep(20);
                 }
 
-                var restartLedger = new ServiceAttemptLedger(new ServiceAttemptLedgerPersistence(storePath));
+                // Simulated old service monitors remain live in this process; its
+                // persistence must not race with the recovered service ledger.
+                var restartedStorePath = Path.Combine(directory, "scenario2-restarted-attempts.json");
+                File.Copy(storePath, restartedStorePath);
+                var restartLedger = new ServiceAttemptLedger(new ServiceAttemptLedgerPersistence(restartedStorePath));
                 var restartRuntime = new WindowsServiceProcessRuntime(restartLedger, useCurrentUserTestLauncher: true);
-
                 var initialObs = restartLedger.Inspect(identity, callerSid);
                 if (initialObs.Phase != ServiceAttemptPhase.TerminationUnknown || !initialObs.ReservationHeld)
                     throw new Exception("Active attempt was not marked unknown on restart");

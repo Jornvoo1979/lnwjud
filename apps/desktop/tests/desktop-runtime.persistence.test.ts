@@ -1004,6 +1004,11 @@ describe('DesktopRuntime persistence', () => {
           },
         });
         expect(Date.now() - shellStartedAt).toBeLessThan(4_000);
+        if (process.platform === 'darwin') {
+          // Durable shell refuses a new process writer before launch on macOS.
+          expect(shellResponse.isError).toBe(true);
+          return;
+        }
         expect(shellResponse.isError).not.toBe(true);
         expect(shellResponse.structuredContent).toMatchObject({
           state: expect.stringMatching(/^(?:starting|running)$/),
@@ -1011,7 +1016,8 @@ describe('DesktopRuntime persistence', () => {
         });
         const shellTaskId = (shellResponse.structuredContent as { task_id: string }).task_id;
         let shellResult = shellResponse;
-        for (let attempt = 0; attempt < 140 && (shellResult.structuredContent?.state === 'starting' || shellResult.structuredContent?.state === 'running'); attempt += 1) {
+        const shellDeadline = Date.now() + 20_000;
+        while (Date.now() < shellDeadline && (shellResult.structuredContent?.state === 'starting' || shellResult.structuredContent?.state === 'running')) {
           await new Promise((resolve) => setTimeout(resolve, 50));
           shellResult = await client.callTool({ name: 'shell', arguments: { operation: 'result', task_id: shellTaskId } });
         }

@@ -36,7 +36,7 @@ export const inspectPosixProcessGroup: PosixProcessGroupInspector = async (group
       encoding: 'utf8', timeout: 1_750, maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
     });
-    return classifyPosixGroupCompletion(parsePosixProcessGroup(stdout, groupId, options.expectedRootStartedAt), platform);
+    return parsePosixProcessGroup(stdout, groupId, options.expectedRootStartedAt);
   } catch {
     return { state: 'unknown', reason: 'process_table_unavailable' };
   }

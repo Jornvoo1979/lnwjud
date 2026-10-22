@@ -82,6 +82,14 @@ describe('multi-workspace concurrency acceptance', () => {
       const testB = await clientB.callTool({
         name: 'project_test', arguments: { workspaceId: workspaceB.id, userConfirmed: true },
       });
+      if (process.platform === 'darwin') {
+        // No macOS owner-loss-safe all-descendant fence exists yet: no child may launch.
+        expect(buildA.isError).toBe(true);
+        expect(testB.isError).toBe(true);
+        await expect(access(path.join(workspaceRootA, 'build.started'))).rejects.toThrow();
+        await expect(access(path.join(workspaceRootB, 'test.started'))).rejects.toThrow();
+        return;
+      }
       expect(buildA.isError).not.toBe(true);
       expect(testB.isError).not.toBe(true);
       const processA = stringField(buildA, 'processId');
