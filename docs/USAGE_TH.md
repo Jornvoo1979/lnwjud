@@ -376,7 +376,7 @@ Live Logs ใช้ดูสถานะ realtime ของ:
 
 External MCP/Serena จะถูกปิดเมื่อ idle ตามค่าที่ตั้งไว้ โดยไม่ตัด call ที่กำลังทำงานอยู่. เมื่อปิดโปรแกรม, เปลี่ยน command, ปิดใช้งาน หรือลบ server ระบบจะ abort การเชื่อมต่อที่รออยู่และปิด process tree ที่ lnwjud เป็นเจ้าของ (process group บน macOS/Linux และ `taskkill /T /F` บน Windows). ถ้าตรวจไม่ได้จริงจะแสดง `termination_unverified` ใน `mcp_list` และ Doctor แทนการรายงานว่าสำเร็จ.
 
-การสร้างไฟล์ภาพ/ไฟล์ไบนารีจาก ChatGPT แล้วส่งเข้าโฟลเดอร์โดยตรงไม่ใช่ความสามารถอัตโนมัติของ MCP bridge: ใช้เครื่องมือสร้างภาพของ ChatGPT แล้วดาวน์โหลดไฟล์ จากนั้นให้ lnwjud `copy_file` ไปยังโฟลเดอร์ที่อนุญาต หรือใช้ `write_file` เฉพาะข้อความ UTF-8. lnwjud ไม่รับ file-id จากหน้า ChatGPT เพื่อเขียนลงดิสก์เองโดยไม่มีการสั่ง copy ที่ชัดเจน.
+การสร้างไฟล์ภาพ/ไฟล์ไบนารีจาก ChatGPT แล้วส่งเข้าโฟลเดอร์โดยตรงไม่ใช่ความสามารถอัตโนมัติของ MCP bridge: ใช้เครื่องมือสร้างภาพของ ChatGPT แล้วดาวน์โหลดไฟล์ จากนั้นให้ lnwjud `copy_file` ไปยังโฟลเดอร์ที่อนุญาต หรือใช้ `write_file` เฉพาะข้อความ UTF-8. lnwjud ไม่รับ file-id จากหน้า ChatGPT เพื่อเขียนลงดิสก์เองโดยไม่มีการสั่ง copy ที่ชัดเจน. **หมายเหตุ Issue #219:** `write_file` แบบ `mode: "create_new"` ป้องกันการเขียนทับไฟล์ปลายทาง แต่ยังใช้ไฟล์ชั่วคราวก่อนทำ hard link ไม่รับประกัน `fsync`, file/parent directory durability, ordered native inode/descriptor receipt หรือทราบผลแน่นอนเมื่อการเชื่อมต่อขาดหลังเริ่มเขียน; ข้อจำกัดบน macOS exFAT ยังไม่มีหลักฐานรับรอง อ่าน [สัญญาความสามารถ v5.9.0](architecture/FILE_PUBLICATION_CONTRACT_V5_9_0.md).
 
 ## 13. Doctor / Troubleshooting
 
