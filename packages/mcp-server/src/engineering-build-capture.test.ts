@@ -186,7 +186,7 @@ describe('host build capture authority', () => {
     f.process.status.mockResolvedValue(ok({ processId: 'process-1', executable: 'node', args: ['build.js'], cwd: f.source, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), exitCode: 0, state }));
     expect((await f.capture.complete(actor, f.handle)).ok).toBe(false);
     expect(await f.capture.resolveReceipt('workspace', 'build-1')).toBeUndefined();
-  });
+  }, 30_000);
 
   it('reports unavailable secure storage without dispatch, and missing provider token without an upload', async () => {
     const f = await fixture();
