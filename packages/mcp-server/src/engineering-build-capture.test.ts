@@ -14,6 +14,10 @@ import { EngineeringBuildCaptureService, type EngineeringBuildCaptureOptions } f
 import { CloudflareEngineeringObservationProvider, LocalEngineeringObservationProvider, createEngineeringReceiptArtifactVerifier, type EngineeringBuildReceipt } from './engineering-delivery-observations.js';
 import { ToolRegistry } from './tool-registry.js';
 
+// The SQLite-backed fixture can start slowly in the concurrent hosted Windows suite.
+// Keep an explicit per-file bound without relaxing any result assertions.
+vi.setConfig({ testTimeout: 30_000 });
+
 const actor = { clientId: 'owner', clientName: 'Owner', sessionId: 'session' };
 const roots: string[] = [];
 const databases: SqliteDatabase[] = [];
@@ -186,7 +190,7 @@ describe('host build capture authority', () => {
     f.process.status.mockResolvedValue(ok({ processId: 'process-1', executable: 'node', args: ['build.js'], cwd: f.source, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), exitCode: 0, state }));
     expect((await f.capture.complete(actor, f.handle)).ok).toBe(false);
     expect(await f.capture.resolveReceipt('workspace', 'build-1')).toBeUndefined();
-  }, 30_000);
+  });
 
   it('reports unavailable secure storage without dispatch, and missing provider token without an upload', async () => {
     const f = await fixture();
