@@ -6,6 +6,12 @@ lnwjud คือ cross-platform local AI-agent runtime / MCP gateway สำห�
 
 > สำหรับผู้ใช้ package ของ lnwjud **ไม่ต้องติดตั้ง Node.js และไม่ต้องดาวน์โหลด `tunnel-client` เอง** ตัว build จาก source `v5.8.1` รวม official OpenAI `tunnel-client v0.0.16` ที่ตรงกับ OS/architecture พร้อม SHA-256/provenance ส่วน release รุ่นก่อนหน้าอาจ bundle เวอร์ชันต่างกัน ให้ยึดหลักฐานของไฟล์ที่ดาวน์โหลดจริง
 
+## Zero-click Auto Updater (ทดลองใน Source v5.9.0 ยังไม่ปล่อย Release)
+
+ไปที่ **Settings → General → ติดตั้งอัปเดตแบบไม่ต้องคลิก** แล้วเปิดสวิตช์หนึ่งครั้ง (ค่าเริ่มต้น OFF) ซึ่งจะเปิด Auto Check/Download พร้อมกัน เมื่อตรวจพบอัปเดตที่ผ่านการดาวน์โหลด/ตรวจสอบของระบบ Native แล้ว โปรแกรมจะรอจนไม่มี MCP Activity และ **Secure Tunnel หยุดสนิท ตรวจสอบได้จริง** ก่อนติดตั้ง พร้อมสร้าง Backup ก่อนทุกครั้งโดยไม่มี Force Timeout สำหรับงานอัตโนมัติ ถ้าตรวจ Tunnel หรือสร้าง Backup ไม่สำเร็จจะไม่ติดตั้งอัตโนมัติ ผู้ใช้ยังสั่งติดตั้งด้วยตนเองได้ตามปกติ
+
+ขอบเขต Silent Install ตอนนี้คือ Windows NSIS ที่ตรวจ Authenticode ผ่าน electron-updater และ macOS App ที่เซ็นถูกต้อง; Windows Portable, Linux AppImage, DEB/RPM ยังไม่รองรับการติดตั้งแบบไร้คลิกจนกว่าจะมี Publisher Trust/Native Acceptance ครบ Windows UAC/สิทธิ์ OS และข้อจำกัดการเซ็นไฟล์ยังมีผล จึงไม่รับประกันว่าจะไม่มี OS Prompt บนเครื่องที่ต้องยกระดับสิทธิ์ และไม่สั่งหยุด Tunnel ที่กำลังให้บริการเอง ฟีเจอร์นี้ยังต้องผ่าน Signed Package Smoke และ Cross-platform CI ก่อน Release
+
 ## Ponytail สำหรับงานเขียนโค้ด (รวมใน Source v5.9.0)
 
 Source รุ่น v5.9.0 มี Skill แบบเอกสารของ [Ponytail v5.3.2](https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2) รุ่น Stable ล่าสุด ณ 21 ตุลาคม 2026 ครบ 6 รายการ ได้แก่ `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain` และ `ponytail-help` โดยตรึง Commit และ MIT License เพื่อให้ตรวจสอบแหล่งที่มาได้ ไม่ติดตั้ง Hook หรือสคริปต์ภายนอกโดยอัตโนมัติ

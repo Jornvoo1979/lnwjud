@@ -271,6 +271,7 @@ const defaultUserSettings: UserSettings = {
   updateCheckOnStartup: true,
   updateIntervalMinutes: 30,
   updateAutoDownload: true,
+  updateSilentInstall: false,
   closeBehavior: 'tray',
   launchAtStartup: false,
   startMinimized: false,
@@ -1421,6 +1422,7 @@ function parseUserSettings(record: Record<string, unknown>): UserSettings {
     updateCheckOnStartup: booleanField(record.updateCheckOnStartup, 'updateCheckOnStartup'),
     updateIntervalMinutes: boundedInteger(record.updateIntervalMinutes, 'updateIntervalMinutes', 5, 24 * 60),
     updateAutoDownload: booleanField(record.updateAutoDownload, 'updateAutoDownload'),
+    updateSilentInstall: record.updateSilentInstall === undefined ? false : booleanField(record.updateSilentInstall, 'updateSilentInstall'),
     closeBehavior: record.closeBehavior === 'tray' || record.closeBehavior === 'quit' ? record.closeBehavior : invalidField('closeBehavior'),
     launchAtStartup: booleanField(record.launchAtStartup, 'launchAtStartup'),
     startMinimized: booleanField(record.startMinimized, 'startMinimized'),
@@ -1868,6 +1870,9 @@ async function requestUpdateInstall(): Promise<{ readonly accepted: boolean; rea
   const runtime = desktopRuntime;
   if (runtime === null) return { accepted: false, status: currentUpdateStatus };
 
+  // A manual request takes ownership before prompting, preventing a queued
+  // unattended attempt from racing a later user decision.
+  updateInstallCoordinator.cancelUnattended();
   updateInstallConfirmationPending = true;
   try {
     const approved = await confirmTunnelStopForUpdate({
@@ -2084,7 +2089,30 @@ function bootstrapMcpStdio(): void {
   });
 }
 
+function silentUpdateEnabled(settings: UserSettings): boolean {
+  // Only native signer-verified NSIS/macOS paths support unattended replacement.
+  // Portable, AppImage and package-manager formats need stronger publisher proof.
+  return app.isPackaged && (updaterDistribution === 'installer' || updaterDistribution === 'macos')
+    && settings.updateSilentInstall && settings.updateAutoCheck && settings.updateAutoDownload;
+}
+
+async function tunnelStoppedForSilentInstall(runtime: DesktopRuntime): Promise<boolean> {
+  try {
+    const status = await runtime.services.getTunnelStatus();
+    if (status.state !== 'stopped' || updateInstallNeedsTunnelStopConfirmation(status)) return false;
+    try {
+      await access(path.join(resolveTunnelProfileDirectory(), 'lnwjud.tunnel.lock'));
+      return false;
+    } catch (error: unknown) {
+      return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT';
+    }
+  } catch {
+    return false;
+  }
+}
+
 function applyDesktopUserSettings(settings: UserSettings): void {
+  const wasSilent = silentUpdateEnabled(desktopUserSettings);
   desktopUserSettings = settings;
   if ((process.platform === 'win32' || process.platform === 'darwin') && app.isPackaged) {
     try {
@@ -2105,6 +2133,8 @@ function applyDesktopUserSettings(settings: UserSettings): void {
   if (autoUpdaterInitialized) {
     autoUpdater.autoDownload = settings.updateAutoDownload;
     configureUpdateCheckSchedule();
+    if (wasSilent && !silentUpdateEnabled(settings)) updateInstallCoordinator?.cancelUnattended();
+    if (silentUpdateEnabled(settings) && currentUpdateStatus.phase === 'ready') updateInstallCoordinator?.requestInstall(true);
   }
 }
 
@@ -2161,15 +2191,23 @@ function initAutoUpdater(runtime: DesktopRuntime): void {
           : { state: snapshot.state, reason: snapshot.reason };
       },
       maxWaitMs: 5_000,
-      install: (): void => {
-        const ensureTunnelStopped = waitsForNativeInstallAcceptance(updaterDistribution)
+      install: (unattended: boolean): void => {
+        const ensureTunnelStopped = unattended
+          ? tunnelStoppedForSilentInstall(runtime)
+          : waitsForNativeInstallAcceptance(updaterDistribution)
           ? Promise.resolve(true)
           : stopTunnelForUpdateInstall(runtime);
         void ensureTunnelStopped.then((tunnelStopped) => {
-          if (!tunnelStopped) return;
+          if (!tunnelStopped) {
+            if (unattended) patchUpdateStatus({ phase: 'ready', message: 'Unattended installation deferred: Secure Tunnel is active or cannot be verified stopped.', canInstall: true });
+            return;
+          }
+          if (unattended && !silentUpdateEnabled(desktopUserSettings)) return;
+          patchUpdateStatus({ phase: 'installing', message: nativeMessages(desktopLocale).updaterInstallWaiting, canInstall: false });
           void runtime.createBackup('pre-update').catch((error: unknown) => {
             console.error(`Pre-update backup failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-          }).finally(() => {
+            if (unattended) throw error;
+          }).then(() => {
             if (usesElectronUpdaterInstall(updaterDistribution)) {
               if (updaterDistribution === 'macos') {
                 // Squirrel.Mac validates the signature after native checkForUpdates.
@@ -2229,6 +2267,8 @@ function initAutoUpdater(runtime: DesktopRuntime): void {
               console.error(`[AutoUpdater] portable install preparation failed: ${message}`);
               patchUpdateStatus({ phase: 'error', message, canInstall: false });
             });
+          }).catch((error: unknown) => {
+            patchUpdateStatus({ phase: 'error', message: `Pre-update backup failed: ${error instanceof Error ? error.message : String(error)}`, canInstall: false });
           });
         });
       },
@@ -2320,13 +2360,20 @@ function initAutoUpdater(runtime: DesktopRuntime): void {
         message: nativeMessages(desktopLocale).updateReadyStatus(info.version),
         canInstall: true,
       });
-      console.log(`[AutoUpdater] Downloaded update: v${info.version}; waiting for user action.`);
+      if (silentUpdateEnabled(desktopUserSettings)) {
+        // Verified by electron-updater's native download checks; wait for a fully stopped
+        // tunnel and a stable zero-activity window without the manual force-install deadline.
+        updateInstallCoordinator?.requestInstall(true);
+      }
+      console.log(`[AutoUpdater] Downloaded update: v${info.version}; ${silentUpdateEnabled(desktopUserSettings) ? 'unattended idle install queued' : 'waiting for user action'}.`);
       broadcastToAllWindows(pushChannels.logEvent, {
         id: Date.now(),
         timestamp: new Date().toISOString(),
         level: 'info',
         source: 'process',
-        text: `[AutoUpdater] Update v${info.version} downloaded! Click the version badge to install.`,
+        text: silentUpdateEnabled(desktopUserSettings)
+          ? `[AutoUpdater] Update v${info.version} downloaded; unattended installation waits for an idle, stopped Secure Tunnel.`
+          : `[AutoUpdater] Update v${info.version} downloaded! Click the version badge to install.`,
       });
     });
 

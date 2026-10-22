@@ -230,6 +230,52 @@ describe('downloaded update installation', () => {
     expect(sharedActivitySnapshot).toHaveBeenCalledTimes(1);
   });
 
+  it('never force-installs an unattended update while a running or unverifiable tunnel is observed', async () => {
+    vi.useFakeTimers();
+    let tunnel: boolean | 'unverifiable' = true;
+    const install = vi.fn();
+    const coordinator = new UpdateInstallCoordinator({
+      activeCallCount: (): number => 0,
+      tunnelRunning: async (): Promise<boolean | 'unverifiable'> => tunnel,
+      install,
+      maxWaitMs: 50,
+      pollIntervalMs: 10,
+      quietPeriodMs: 20,
+    });
+    coordinator.requestInstall(true);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(install).not.toHaveBeenCalled();
+    tunnel = 'unverifiable';
+    await vi.advanceTimersByTimeAsync(100);
+    expect(install).not.toHaveBeenCalled();
+    tunnel = false;
+    await vi.advanceTimersByTimeAsync(30);
+    expect(install).toHaveBeenCalledOnce();
+    expect(install).toHaveBeenCalledWith(true);
+  });
+
+  it('cancels silent installation when opt-in is disabled and still allows a later manual request', async () => {
+    vi.useFakeTimers();
+    let active = 1;
+    const install = vi.fn();
+    const coordinator = new UpdateInstallCoordinator({
+      activeCallCount: (): number => active,
+      install,
+      pollIntervalMs: 10,
+      quietPeriodMs: 20,
+    });
+    coordinator.requestInstall(true);
+    await vi.advanceTimersByTimeAsync(30);
+    coordinator.cancelUnattended();
+    active = 0;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(install).not.toHaveBeenCalled();
+    coordinator.requestInstall();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(install).toHaveBeenCalledOnce();
+    expect(install).toHaveBeenCalledWith(false);
+  });
+
   it('forces installation after a bounded grace period once the user has confirmed an update', async () => {
     vi.useFakeTimers();
     const install = vi.fn();

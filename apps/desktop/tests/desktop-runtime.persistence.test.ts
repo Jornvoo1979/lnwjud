@@ -825,6 +825,7 @@ describe('DesktopRuntime persistence', () => {
     try {
       const initial = firstRuntime.getUserSettings();
       expect(initial.eccEnabled).toBe(false);
+      expect(initial.updateSilentInstall).toBe(false);
       expect(initial.tunnelAutoReconnect).toBe(false);
       const next = {
         ...initial,
@@ -842,6 +843,7 @@ describe('DesktopRuntime persistence', () => {
         updateCheckOnStartup: false,
         updateIntervalMinutes: 120,
         updateAutoDownload: false,
+        updateSilentInstall: true,
         closeBehavior: 'quit' as const,
         launchAtStartup: true,
         startMinimized: true,
@@ -897,6 +899,7 @@ describe('DesktopRuntime persistence', () => {
           updateCheckOnStartup: false,
           updateIntervalMinutes: 120,
           updateAutoDownload: false,
+          updateSilentInstall: true,
           closeBehavior: 'quit',
           launchAtStartup: true,
           startMinimized: true,

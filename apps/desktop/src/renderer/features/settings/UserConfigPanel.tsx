@@ -57,6 +57,7 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
   updateCheckOnStartup: true,
   updateIntervalMinutes: 30,
   updateAutoDownload: true,
+  updateSilentInstall: false,
   closeBehavior: 'tray',
   launchAtStartup: false,
   startMinimized: false,
@@ -250,6 +251,7 @@ export function UserConfigPanel({ locale, hostPlatform, hostArch, permissionProf
             <SettingSwitch checked={draft.updateAutoCheck} label={t('userConfig.autoUpdateCheck')} description={t('userConfig.autoUpdateCheckDesc')} onChange={(value) => patch({ updateAutoCheck: value })} />
             <SettingSwitch checked={draft.updateCheckOnStartup} label={t('userConfig.checkOnStartup')} description={t('userConfig.checkOnStartupDesc')} onChange={(value) => patch({ updateCheckOnStartup: value })} />
             <SettingSwitch checked={draft.updateAutoDownload} label={t('userConfig.autoDownload')} description={t('userConfig.autoDownloadDesc')} onChange={(value) => patch({ updateAutoDownload: value })} />
+            <SettingSwitch checked={draft.updateSilentInstall} label={t('userConfig.silentInstall')} description={t('userConfig.silentInstallDesc')} onChange={(value) => patch({ updateSilentInstall: value, ...(value ? { updateAutoCheck: true, updateAutoDownload: true } : {}) })} />
           </div>
         </section>
       ) : null}
