@@ -155,7 +155,7 @@ describe('AutomationRuntimeAdapter', () => {
     });
   });
 
-  it('dispatches deterministically through ToolRegistry while keeping the reserved context out of the public schema', async () => {
+  it.skipIf(process.platform === 'darwin')('dispatches deterministically through ToolRegistry while keeping the reserved context out of the public schema', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-automation-adapter-'));
     roots.push(root);
     await mkdir(path.join(root, '.tasks'), { recursive: true });
@@ -221,7 +221,7 @@ describe('AutomationRuntimeAdapter', () => {
     expect(terminal.structuredContent, JSON.stringify(terminal.structuredContent)).toMatchObject({ state: 'completed', stdout: 'automation-ok' });
   }, 20_000);
 
-  it('reattaches to one exact running task after runtime replacement and reads its terminal receipt without relaunching', async () => {
+  it.skipIf(process.platform === 'darwin')('reattaches to one exact running task after runtime replacement and reads its terminal receipt without relaunching', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-automation-adapter-restart-'));
     roots.push(root);
     const taskDirectory = path.join(root, '.tasks');

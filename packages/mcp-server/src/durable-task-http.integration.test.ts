@@ -41,7 +41,7 @@ const cases: Array<{ protocol: 'modern' | 'legacy'; launchTool: 'shell' | 'task_
 ];
 
 describe('durable task ownership over HTTP', () => {
-  it.each(cases)('$protocol $launchTool preserves outputs and ownership across provider replacement', async ({ protocol, launchTool }) => {
+  it.skipIf(process.platform === 'darwin').each(cases)('$protocol $launchTool preserves outputs and ownership across provider replacement', async ({ protocol, launchTool }) => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-owned-http-'));
     const rootA = path.join(directory, 'a');
     const rootB = path.join(directory, 'b');

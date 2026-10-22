@@ -696,10 +696,14 @@ internal static class NativeTests
 
     private static void TestServiceImportPublicationRecovery(string root)
     {
+        var scenarioIndex = 0;
         foreach (var scenario in new[] { "after_native_publish", "after_publication_intent", "collision", "cancel_before_control",
             "cancel_during_validation", "cancel_before_publication_commit", "timeout_before_publication_commit", "cancel_after_publication_commit" })
         {
-            var directory = Path.Combine(root, "import-publication-" + scenario);
+            // Git for Windows defaults to MAX_PATH-sensitive loose-object paths.
+            // Keep native-security fixture paths bounded regardless of CI TEMP
+            // depth; the complete scenario still appears in assertion messages.
+            var directory = Path.Combine(root, "p" + scenarioIndex++);
             Directory.CreateDirectory(directory);
             var workspace = Path.Combine(directory, "workspace");
             var home = Path.Combine(directory, "home");
