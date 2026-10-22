@@ -4,6 +4,8 @@ node_modules/
 .pnpm-store/
 
 # Build & Compilation
+# Linker-generated Windows N-API import library at the repository root.
+/pin.lib
 dist/
 build/
 !apps/desktop/build/
