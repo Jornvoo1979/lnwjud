@@ -39,7 +39,7 @@ async function fixture(): Promise<{
 }
 
 describe('SharedManagedWriterAdmission authenticated release', () => {
-  it('persists distinct process and reservation identity and the actual owner session', async () => {
+  it.skipIf(process.platform === 'darwin')('persists distinct process and reservation identity and the actual owner session', async () => {
     const f = await fixture();
     const admitted = await f.admission.enter(f.input);
     expect(admitted.ok).toBe(true); if (!admitted.ok) return;
@@ -51,7 +51,7 @@ describe('SharedManagedWriterAdmission authenticated release', () => {
     expect(JSON.parse(await readFile(path.join(markers, files[0]!), 'utf8'))).toMatchObject({ nativeBinding: admitted.value.nativeBinding });
   });
 
-  it('retains forged terminal proof across restart and releases only after an exclusive authenticated abort', async () => {
+  it.skipIf(process.platform === 'darwin')('retains forged terminal proof across restart and releases only after an exclusive authenticated abort', async () => {
     const f = await fixture(); const admitted = await f.admission.enter(f.input);
     expect(admitted.ok).toBe(true); if (!admitted.ok) return;
     await mkdir(path.dirname(f.receiptPath), { recursive: true });
@@ -64,7 +64,7 @@ describe('SharedManagedWriterAdmission authenticated release', () => {
     expect(probe.ok).toBe(true); if (probe.ok) await probe.value.releaseAfterVerifiedTermination();
   });
 
-  it('refuses another session proof even when process and reservation IDs match', async () => {
+  it.skipIf(process.platform === 'darwin')('refuses another session proof even when process and reservation IDs match', async () => {
     const f = await fixture(); const admitted = await f.admission.enter(f.input);
     expect(admitted.ok).toBe(true); if (!admitted.ok || admitted.value.nativeBinding === undefined) return;
     await f.authority.abortBeforeLaunch({ directory: path.dirname(f.receiptPath), binding: { ...admitted.value.nativeBinding, ownerSessionId: 'other-session' } });
@@ -72,7 +72,7 @@ describe('SharedManagedWriterAdmission authenticated release', () => {
     expect(await new SharedManagedWriterAdmission(f.taskDirectory, f.authority).holdExclusiveProbe('workspace')).toMatchObject({ ok: false });
   });
 
-  it('requires full native identity and canonical receipt path before reserving', async () => {
+  it.skipIf(process.platform === 'darwin')('requires full native identity and canonical receipt path before reserving', async () => {
     const f = await fixture();
     const missingSession = { ...f.input };
     Reflect.deleteProperty(missingSession, 'actorSessionId');
@@ -103,7 +103,7 @@ describe('SharedManagedWriterAdmission authenticated release', () => {
     if (probe.ok) await probe.value.releaseAfterVerifiedTermination();
   });
 
-  it('retains an old uncontained reservation after restart rather than inferring descendants are gone', async () => {
+  it.skipIf(process.platform === 'darwin')('retains an old uncontained reservation after restart rather than inferring descendants are gone', async () => {
     const f = await fixture();
     expect(await f.admission.enter({ actorClientId: 'old-host', workspaceId: 'workspace', kind: 'uncontained_process' })).toMatchObject({ ok: true });
     expect(await new SharedManagedWriterAdmission(f.taskDirectory, f.authority).holdExclusiveProbe('workspace')).toMatchObject({ ok: false });

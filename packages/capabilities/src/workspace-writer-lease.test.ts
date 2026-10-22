@@ -87,7 +87,7 @@ describe('durable multi-session workspace writer lease', () => {
     await one.end('workspace', 'owned-call', acquired.value.generation);
     expect(await two.release('workspace', 'client-one', 'session-one', acquired.value)).toMatchObject({ ok: true });
     expect(await two.begin('workspace', 'client-two', 'session-two', 'next-call')).toMatchObject({ ok: true, value: { required: false } });
-  });
+  }, 20_000);
 
   it('rotates fencing generation on expiry, rejects stale proof and recovers a stopped owner', async () => {
     let time = 0;

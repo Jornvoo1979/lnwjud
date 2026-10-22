@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -12,7 +12,9 @@ afterEach(async () => {
 });
 
 async function fixture(): Promise<{ directory: string; compiledBundlePath: string; platform: ContainmentPlatform }> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-containment-trust-'));
+  // CI Windows TEMP may be an 8.3 alias; the verifier correctly requires a
+  // canonical trusted directory, so prepare a canonical fixture identity.
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-containment-trust-')));
   roots.push(directory);
   const compiledBundlePath = path.join(directory, 'main.js');
   const helper = Buffer.from('first-party helper');

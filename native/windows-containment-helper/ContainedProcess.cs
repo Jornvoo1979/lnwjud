@@ -227,7 +227,17 @@ internal sealed class ContainedProcess : IDisposable
             Thread.Sleep(10);
         }
         if (!Task.WaitAll([stdout, stderr], 5000)) throw new IOException("CONTAINMENT_CAPTURE_STDIO_UNDRAINED");
-        if (child.ExitCode != 0) throw new IOException("CONTAINMENT_CAPTURE_EXIT_" + child.ExitCode);
+        if (child.ExitCode != 0)
+        {
+#if NATIVE_CONTAINMENT_TESTS
+            // Test fixture git stderr is bounded and contains no user credentials;
+            // production errors must never echo potentially secret child output.
+            var details = Encoding.UTF8.GetString(stderr.GetAwaiter().GetResult());
+            throw new IOException("CONTAINMENT_CAPTURE_EXIT_" + child.ExitCode + "_" + details[..Math.Min(512, details.Length)]);
+#else
+            throw new IOException("CONTAINMENT_CAPTURE_EXIT_" + child.ExitCode);
+#endif
+        }
         return new UTF8Encoding(false, true).GetString(stdout.GetAwaiter().GetResult());
     }
     private static byte[] ReadBounded(Stream stream, int maximumBytes)

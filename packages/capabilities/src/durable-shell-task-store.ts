@@ -810,6 +810,15 @@ export class DurableShellTaskStore {
   }
 
   private async reconcilePosix(metadata: DurableTaskMetadata): Promise<DurableTaskMetadata> {
+    // The coordinator persists its PID asynchronously after reservation. A
+    // status read during this bounded bootstrap gap cannot infer owner loss.
+    // Preserve the live provisional state, and keep its writer reservation;
+    // when the grace expires without identity, recovery fails closed below.
+    const started = Date.parse(metadata.started_at);
+    if ((metadata.state === 'starting' || metadata.state === 'running')
+      && metadata.worker_pid === undefined && metadata.child_pid === undefined
+      && Number.isFinite(started) && Date.now() >= started
+      && Date.now() - started < PROCESS_IDENTITY_CAPTURE_GRACE_MS) return metadata;
     const empty = await this.posixGroupIsEmpty(metadata);
     if (empty && isTerminal(metadata.state)) return metadata;
     const worker = metadata.worker_pid === undefined ? undefined : await probeProcessIdentity(metadata.worker_pid, this.platform);

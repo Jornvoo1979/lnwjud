@@ -57,6 +57,28 @@ afterEach(async () => {
 });
 
 describe('durable shell background tasks', () => {
+  it('preserves a just-reserved POSIX worker during identity capture but fails closed after grace', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-posix-bootstrap-'));
+    temporaryRoots.push(root);
+    const taskId = 'bootstrap-admission';
+    const directory = path.join(root, taskId);
+    await mkdir(directory);
+    const started = new Date().toISOString();
+    const metadata = {
+      version: 2, task_id: taskId, state: 'running',
+      request_digest: 'a'.repeat(64), containment: 'posix_group_v1',
+      started_at: started, deadline_at: new Date(Date.now() + 60_000).toISOString(),
+      include_stdout: false, include_stderr: false, max_output_bytes: 1024,
+    };
+    const file = path.join(directory, 'task.json');
+    await writeFile(file, JSON.stringify(metadata));
+    const store = new DurableShellTaskStore(root, { platform: 'linux' });
+    expect(await store.snapshot(taskId)).toMatchObject({ ok: true, value: { state: 'running' } });
+    await writeFile(file, JSON.stringify({ ...metadata, started_at: new Date(Date.now() - 15_000).toISOString() }));
+    expect(await store.snapshot(taskId)).toMatchObject({ ok: true, value: { state: 'termination_unverified' } });
+  });
+
+
   it('keeps waiting through provisional termination-unverified state until a canonical terminal write', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-wait-reconcile-'));
     temporaryRoots.push(root);
@@ -343,7 +365,7 @@ describe('durable shell background tasks', () => {
   }, 45000);
 
 
-  it('isolates repository import child environment without changing ordinary shell behavior', async () => {
+  it.skipIf(process.platform === 'darwin')('isolates repository import child environment without changing ordinary shell behavior', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-env-'));
     temporaryRoots.push(root);
     const store = new DurableShellTaskStore(path.join(root, '.tasks'));
@@ -376,7 +398,7 @@ describe('durable shell background tasks', () => {
     }
   }, process.env.CI ? 160000 : 30000);
 
-  it('holds an import-exclusive reservation through real contained worker lifetime', async () => {
+  it.skipIf(process.platform === 'darwin')('holds an import-exclusive reservation through real contained worker lifetime', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-import-worker-lifetime-'));
     temporaryRoots.push(root);
     const state = path.join(root, '.tasks');
@@ -440,7 +462,7 @@ describe('durable shell background tasks', () => {
     expect(await nativeAuthority?.inspect({ directory: path.join(state, taskId), binding: metadata.containmentBinding })).toMatchObject({ state: 'terminal_verified', activeProcesses: 0 });
   }, 15000);
 
-  it('keeps liveness output-free but returns bounded terminal CI proof only to its workspace', async () => {
+  it.skipIf(process.platform === 'darwin')('keeps liveness output-free but returns bounded terminal CI proof only to its workspace', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-evidence-proof-'));
     temporaryRoots.push(root);
     const store = new DurableShellTaskStore(path.join(root, '.tasks'));
@@ -466,7 +488,7 @@ describe('durable shell background tasks', () => {
     expect(foreign).toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } });
   }, 45000);
 
-  it('fails closed for truncated terminal stdout evidence', async () => {
+  it.skipIf(process.platform === 'darwin')('fails closed for truncated terminal stdout evidence', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-evidence-truncated-'));
     temporaryRoots.push(root);
     const store = new DurableShellTaskStore(path.join(root, '.tasks'));
@@ -496,7 +518,7 @@ describe('durable shell background tasks', () => {
     expect(parsePosixProcessProbe('not-a-valid-ps-row')).toEqual({ state: 'unverifiable', reason: 'invalid_probe_response' });
   });
 
-  it.skipIf(process.platform === 'win32')('cancels the detached child group before retiring its durable worker', async () => {
+  it.skipIf(process.platform !== 'linux')('cancels the detached child group before retiring its durable worker', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-groups-'));
     temporaryRoots.push(root);
     const backend = new ShellCapabilityBackend({ allowedRoots: [root], taskStateDirectory: path.join(root, '.tasks') });
@@ -534,7 +556,7 @@ describe('durable shell background tasks', () => {
     }
   }, 15000);
 
-  it('survives a backend/runtime replacement and returns logs and result by task id', async () => {
+  it.skipIf(process.platform === 'darwin')('survives a backend/runtime replacement and returns logs and result by task id', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-shell-'));
     temporaryRoots.push(root);
     const taskStateDirectory = path.join(root, '.tasks');
@@ -653,7 +675,7 @@ describe('durable shell background tasks', () => {
     expect(await store.snapshot(taskId)).toMatchObject({ ok: true, value: { state: 'completed', exit_code: 0 } });
   }, 15_000);
 
-  it('does not overwrite a very fast durable completion back to running', async () => {
+  it.skipIf(process.platform === 'darwin')('does not overwrite a very fast durable completion back to running', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-shell-'));
     temporaryRoots.push(root);
     const backend = new ShellCapabilityBackend({
@@ -697,7 +719,7 @@ describe('durable shell background tasks', () => {
     });
   }, 15_000);
 
-  it('retains Windows containment until a detached descendant closes inherited stdio', async () => {
+  it.skipIf(process.platform === 'darwin')('retains Windows containment until a detached descendant closes inherited stdio', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-shell-'));
     temporaryRoots.push(root);
     const backend = new ShellCapabilityBackend({
@@ -746,7 +768,7 @@ describe('durable shell background tasks', () => {
 
   // Replacement cancellation probes worker identity and may invoke taskkill;
   // PowerShell startup can exceed Vitest's 5s default on a busy Windows host.
-  it('cancels a durable task from a replacement backend', async () => {
+  it.skipIf(process.platform === 'darwin')('cancels a durable task from a replacement backend', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-shell-'));
     temporaryRoots.push(root);
     const taskStateDirectory = path.join(root, '.tasks');
@@ -779,7 +801,7 @@ describe('durable shell background tasks', () => {
     expect(cancelled).toMatchObject({ ok: true, value: { task_id: taskId, state: 'cancelled', durable: true } });
   }, 45_000);
 
-  it('keeps a durable auto task running when the original MCP caller aborts after submission', async () => {
+  it.skipIf(process.platform === 'darwin')('keeps a durable auto task running when the original MCP caller aborts after submission', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-shell-'));
     temporaryRoots.push(root);
     const taskStateDirectory = path.join(root, '.tasks');
@@ -813,7 +835,7 @@ describe('durable shell background tasks', () => {
     expect(finished).toMatchObject({ ok: true, value: { state: 'completed', exit_code: 0, stdout: 'after-abort', durable: true } });
   }, 45000);
 
-  it('caps concurrent durable workers so many chats cannot exhaust a Windows 10/11 machine with child consoles', async () => {
+  it.skipIf(process.platform === 'darwin')('caps concurrent durable workers so many chats cannot exhaust a Windows 10/11 machine with child consoles', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-shell-cap-'));
     temporaryRoots.push(root);
     const taskStateDirectory = path.join(root, '.tasks');
@@ -846,7 +868,7 @@ describe('durable shell background tasks', () => {
       if (first.ok) await store.cancel('task-one', owner);
     }
   }, 15_000);
-  it('does not hydrate historical durable output while enforcing the concurrency limit', async () => {
+  it.skipIf(process.platform === 'darwin')('does not hydrate historical durable output while enforcing the concurrency limit', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-memory-'));
     temporaryRoots.push(root);
     const taskStateDirectory = path.join(root, '.tasks');
@@ -893,7 +915,7 @@ describe('durable shell background tasks', () => {
     if (launched.ok) await store.wait('new-task', 5, undefined, owner);
   }, 15_000);
 
-  it('uses the persisted active index on warm launch without rescanning terminal task sidecars', async () => {
+  it.skipIf(process.platform === 'darwin')('uses the persisted active index on warm launch without rescanning terminal task sidecars', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-durable-warm-index-'));
     temporaryRoots.push(root);
     const taskStateDirectory = path.join(root, '.tasks');

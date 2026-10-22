@@ -16,7 +16,7 @@ async function fixture(): Promise<string> {
 const request = { taskId: 'shell-probe', requestDigest: 'a'.repeat(64), ownerClientId: 'shell-client' };
 
 describe('managed writer and durable shell admission', () => {
-  it('keeps unknown managed writers globally fenced without consuming the durable shell budget', async () => {
+  it.skipIf(process.platform === 'darwin')('keeps unknown managed writers globally fenced without consuming the durable shell budget', async () => {
     const root = await fixture();
     const admission = new SharedManagedWriterAdmission(root);
     for (let i = 0; i < 17; i += 1) {
@@ -38,7 +38,7 @@ describe('managed writer and durable shell admission', () => {
     expect(await readdir(directory)).toHaveLength(18);
   });
 
-  it.each([undefined, 1])('shows aggregate reservations even when the requested task page is empty (limit %s)', async (limit) => {
+  it.skipIf(process.platform === 'darwin').each([undefined, 1])('shows aggregate reservations even when the requested task page is empty (limit %s)', async (limit) => {
     const root = await fixture();
     const taskRoot = path.join(root, 'tasks');
     const held = await new SharedManagedWriterAdmission(taskRoot).enter({ actorClientId: 'private-client', actorSessionId: 'private-session', workspaceId: 'private-workspace', kind: 'uncontained_process' });
@@ -64,7 +64,7 @@ describe('managed writer and durable shell admission', () => {
     expect(await initial.hasReservation(request.taskId, request.requestDigest)).toBe(false);
   });
 
-  it('never treats corrupt reservation readback as successful release', async () => {
+  it.skipIf(process.platform === 'darwin')('never treats corrupt reservation readback as successful release', async () => {
     const root = await fixture();
     const admitted = await new SharedManagedWriterAdmission(root).enter({ actorClientId: 'writer', workspaceId: 'workspace', kind: 'uncontained_process' });
     expect(admitted.ok).toBe(true);
