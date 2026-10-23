@@ -2096,19 +2096,14 @@ function bootstrapMcpStdio(): void {
 function unattendedUpdateUnavailableMessage(): string | null {
   const support = unattendedUpdateSupport(updaterDistribution);
   if (support.kind === 'native-supported') return null;
+  const messages = nativeMessages(desktopLocale);
   switch (support.reason) {
     case 'windows-publisher-verification-unavailable':
-      return desktopLocale === 'th'
-        ? 'รุ่นนี้ยังไม่พร้อมติดตั้งอัปเดต Windows อัตโนมัติ คุณยังติดตั้งอัปเดตที่ดาวน์โหลดแล้วด้วยตนเองได้'
-        : 'Automatic Windows installation is unavailable for this build. You can install the downloaded update manually.';
+      return messages.updaterAutomaticWindowsUnavailable;
     case 'native-update-transaction-unavailable':
-      return desktopLocale === 'th'
-        ? 'รุ่นนี้ยังไม่พร้อมติดตั้งอัปเดต macOS อัตโนมัติ คุณยังติดตั้งอัปเดตที่ดาวน์โหลดแล้วด้วยตนเองได้'
-        : 'Automatic macOS installation is unavailable for this build. You can install the downloaded update manually.';
+      return messages.updaterAutomaticMacosUnavailable;
     case 'unsupported-distribution':
-      return desktopLocale === 'th'
-        ? 'แพ็กเกจนี้ไม่รองรับการติดตั้งอัปเดตอัตโนมัติ โปรดอัปเดตด้วยวิธีที่แพ็กเกจรองรับ'
-        : 'This distribution does not support automatic installation. Use its supported manual update method.';
+      return messages.updaterAutomaticDistributionUnavailable;
   }
 }
 
