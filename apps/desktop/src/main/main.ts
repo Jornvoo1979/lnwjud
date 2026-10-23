@@ -141,6 +141,8 @@ import type { ElectronNativeCapabilityApi, NativeDesktopCaptureRequest, NativeDe
 import { configureLinuxAutostart } from './linux-autostart.js';
 import { InstallActivityCoordinator } from './install-activity.js';
 import { canInstallMacosUpdates } from './macos-update-trust.js';
+import { installWindowsUpdate, unattendedUpdateSupport } from './unattended-update-policy.js';
+import { createNativeUpdateBootstrapClient, type NativeUpdateBootstrapClient } from './native-update-client.js';
 
 const ECC_UPSTREAM_VERSION = '2.2.1';
 
@@ -1592,6 +1594,7 @@ let factoryResetQueued = false;
 const desktopIpcDrainBarrier = new DesktopIpcDrainBarrier();
 let desktopShutdownCoordinator: DesktopShutdownCoordinator | null = null;
 let updateInstallCoordinator: UpdateInstallCoordinator | null = null;
+let nativeUpdateBootstrapClient: NativeUpdateBootstrapClient | null = null;
 let updateInstallConfirmationPending = false;
 let updateCheckScheduler: UpdateCheckScheduler | null = null;
 let pendingUpdateCheckSource: 'automatic' | 'tray' | 'renderer' | null = null;
@@ -2019,6 +2022,7 @@ function bootstrapMcpStdio(): void {
   const dataPath = configureDataPath();
   void app.whenReady().then(async () => {
     assertSupportedPlatform();
+    await prepareDataPath(dataPath);
     prependBundledRuntimeToolsToPath();
     const secrets = await resolveDesktopRuntimeSecrets(dataPath);
     const runtime = createDesktopRuntime(dataPath, {
@@ -2089,11 +2093,37 @@ function bootstrapMcpStdio(): void {
   });
 }
 
+function unattendedUpdateUnavailableMessage(): string | null {
+  const support = unattendedUpdateSupport(updaterDistribution);
+  if (support.kind === 'native-supported') return null;
+  switch (support.reason) {
+    case 'windows-publisher-verification-unavailable':
+      return desktopLocale === 'th'
+        ? 'รุ่นนี้ยังไม่พร้อมติดตั้งอัปเดต Windows อัตโนมัติ คุณยังติดตั้งอัปเดตที่ดาวน์โหลดแล้วด้วยตนเองได้'
+        : 'Automatic Windows installation is unavailable for this build. You can install the downloaded update manually.';
+    case 'native-update-transaction-unavailable':
+      return desktopLocale === 'th'
+        ? 'รุ่นนี้ยังไม่พร้อมติดตั้งอัปเดต macOS อัตโนมัติ คุณยังติดตั้งอัปเดตที่ดาวน์โหลดแล้วด้วยตนเองได้'
+        : 'Automatic macOS installation is unavailable for this build. You can install the downloaded update manually.';
+    case 'unsupported-distribution':
+      return desktopLocale === 'th'
+        ? 'แพ็กเกจนี้ไม่รองรับการติดตั้งอัปเดตอัตโนมัติ โปรดอัปเดตด้วยวิธีที่แพ็กเกจรองรับ'
+        : 'This distribution does not support automatic installation. Use its supported manual update method.';
+  }
+}
+
 function silentUpdateEnabled(settings: UserSettings): boolean {
-  // Only native signer-verified NSIS/macOS paths support unattended replacement.
-  // Portable, AppImage and package-manager formats need stronger publisher proof.
-  return app.isPackaged && (updaterDistribution === 'installer' || updaterDistribution === 'macos')
+  // Distribution and signing eligibility alone cannot authorize installation
+  // before the native update transaction and its recovery authority are ready.
+  return app.isPackaged && unattendedUpdateSupport(updaterDistribution).kind === 'native-supported'
     && settings.updateSilentInstall && settings.updateAutoCheck && settings.updateAutoDownload;
+}
+
+async function deferNativeAutomaticUpdate(version: string): Promise<void> {
+  const capability = await nativeUpdateBootstrapClient?.automaticCapability();
+  recordUpdaterEvent(`native-update-capability:${capability?.reason ?? 'UPDATE_WORKER_UNAVAILABLE'}`);
+  if (!desktopUserSettings.updateSilentInstall || currentUpdateStatus.phase !== 'ready' || currentUpdateStatus.availableVersion !== version) return;
+  patchUpdateStatus({ message: unattendedUpdateUnavailableMessage() ?? 'Automatic installation is unavailable.' });
 }
 
 async function tunnelStoppedForSilentInstall(runtime: DesktopRuntime): Promise<boolean> {
@@ -2135,6 +2165,10 @@ function applyDesktopUserSettings(settings: UserSettings): void {
     configureUpdateCheckSchedule();
     if (wasSilent && !silentUpdateEnabled(settings)) updateInstallCoordinator?.cancelUnattended();
     if (silentUpdateEnabled(settings) && currentUpdateStatus.phase === 'ready') updateInstallCoordinator?.requestInstall(true);
+    const unavailableMessage = unattendedUpdateUnavailableMessage();
+    if (settings.updateSilentInstall && unavailableMessage !== null && currentUpdateStatus.phase === 'ready') {
+      patchUpdateStatus({ message: unavailableMessage });
+    }
   }
 }
 
@@ -2190,8 +2224,12 @@ function initAutoUpdater(runtime: DesktopRuntime): void {
           ? { state: 'available', activeCallCount: snapshot.activeCount, revision: snapshot.revision, ownerKey: snapshot.ownerKey }
           : { state: snapshot.state, reason: snapshot.reason };
       },
-      maxWaitMs: 5_000,
       install: (unattended: boolean): void => {
+        if (unattended) {
+          const version = currentUpdateStatus.availableVersion;
+          if (version !== null) void deferNativeAutomaticUpdate(version);
+          return;
+        }
         const ensureTunnelStopped = unattended
           ? tunnelStoppedForSilentInstall(runtime)
           : waitsForNativeInstallAcceptance(updaterDistribution)
@@ -2253,7 +2291,7 @@ function initAutoUpdater(runtime: DesktopRuntime): void {
                   patchUpdateStatus({ phase: 'error', message: error instanceof Error ? error.message : String(error), canInstall: false });
                 });
               } else {
-                void desktopShutdownCoordinator?.requestQuit(() => autoUpdater.quitAndInstall(), 'install');
+                void desktopShutdownCoordinator?.requestQuit(() => installWindowsUpdate(autoUpdater, unattended), 'install');
               }
               return;
             }
@@ -2365,13 +2403,12 @@ function initAutoUpdater(runtime: DesktopRuntime): void {
         phase: 'ready',
         availableVersion: info.version,
         progressPercent: 100,
-        message: nativeMessages(desktopLocale).updateReadyStatus(info.version),
+        message: (desktopUserSettings.updateSilentInstall ? unattendedUpdateUnavailableMessage() : null)
+          ?? nativeMessages(desktopLocale).updateReadyStatus(info.version),
         canInstall: true,
       });
-      if (silentUpdateEnabled(desktopUserSettings)) {
-        // Verified by electron-updater's native download checks; wait for a fully stopped
-        // tunnel and a stable zero-activity window without the manual force-install deadline.
-        updateInstallCoordinator?.requestInstall(true);
+      if (desktopUserSettings.updateSilentInstall && desktopUserSettings.updateAutoCheck && desktopUserSettings.updateAutoDownload) {
+        void deferNativeAutomaticUpdate(info.version);
       }
       console.log(`[AutoUpdater] Downloaded update: v${info.version}; ${silentUpdateEnabled(desktopUserSettings) ? 'unattended idle install queued' : 'waiting for user action'}.`);
       broadcastToAllWindows(pushChannels.logEvent, {
@@ -2840,6 +2877,7 @@ function bootstrapDesktop(configuredDataPath?: string): void {
   void app.whenReady().then(async () => {
     recordDesktopStartup('app-ready:resolved');
     assertSupportedPlatform();
+    await prepareDataPath(dataPath);
     app.setAppUserModelId('com.lnwjud.desktop');
     const session = platformCompatibility.linuxSession;
     console.log(
@@ -2898,6 +2936,7 @@ function bootstrapLogViewerOnly(configuredDataPath?: string): void {
   if (platformCompatibility.disableHardwareAcceleration) app.disableHardwareAcceleration();
   void app.whenReady().then(async () => {
     assertSupportedPlatform();
+    await prepareDataPath(dataPath);
     app.setAppUserModelId('com.lnwjud.desktop');
     prependBundledRuntimeToolsToPath();
     const runtime = await createNativeDesktopRuntime(dataPath);
@@ -3139,6 +3178,15 @@ function configureDataPath(configuredDataPath?: string): string {
   const dataPath = configuredDataPath ?? configureUserDataPath();
   configureCrashRecovery(dataPath);
   recordDesktopStartup('data-path:configured');
+  return dataPath;
+}
+
+export async function prepareDataPath(dataPath: string): Promise<void> {
+  if (app.isPackaged) {
+    nativeUpdateBootstrapClient = createNativeUpdateBootstrapClient(dataPath, process.execPath, process.resourcesPath);
+    const recovery = await nativeUpdateBootstrapClient.recoverBeforeStartup();
+    if (recovery.kind === 'held') throw new Error(`Update recovery holds writable startup (${recovery.reason})`);
+  }
   recordDesktopStartup('restore:begin');
   const restore = applyPendingSqliteRestoreSync(path.join(dataPath, 'lnwjud.sqlite'), path.join(dataPath, 'backups'), {
     platform: process.platform,
@@ -3151,7 +3199,6 @@ function configureDataPath(configuredDataPath?: string): string {
   recordDesktopStartup('restore:end');
   if (restore.error !== undefined) console.error(`Scheduled database restore failed: ${restore.error}`);
   if (restore.applied) console.log(`Database restore applied from ${restore.backupId ?? 'scheduled backup'}`);
-  return dataPath;
 }
 
 const factoryResetApplyRequested = process.argv.includes(FACTORY_RESET_APPLY_ARG);

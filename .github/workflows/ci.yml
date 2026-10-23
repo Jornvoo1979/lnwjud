@@ -60,6 +60,9 @@ jobs:
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
 
+      - name: Prepare trusted update worker
+        run: pnpm prepare:update-worker
+
       - name: Provision real protected Windows containment service
         if: runner.os == 'Windows'
         shell: pwsh
@@ -116,6 +119,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'CI_NATIVE_TEST_BUILD_FAILED' }
           dotnet run --project native/windows-containment-helper/tests/ContainmentNativeTests.csproj -c Release --no-build --no-restore
           if ($LASTEXITCODE -ne 0) { throw 'CI_NATIVE_TESTS_FAILED' }
+
+      - name: Test published Windows update worker failure boundaries
+        if: matrix.name == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-update-worker.ps1
 
       - name: Run complete native unit and service acceptance suites
         shell: bash
@@ -201,6 +209,9 @@ jobs:
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
 
+      - name: Prepare trusted update worker
+        run: pnpm prepare:update-worker
+
       - name: Provision real protected Windows containment service
         if: runner.os == 'Windows'
         shell: pwsh
@@ -275,6 +286,9 @@ jobs:
 
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
+
+      - name: Prepare trusted update worker
+        run: pnpm prepare:update-worker
 
       - name: Install Linux packaging and Electron smoke prerequisites
         if: matrix.platform == 'linux'
@@ -501,6 +515,9 @@ jobs:
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
 
+      - name: Prepare trusted update worker
+        run: pnpm prepare:update-worker
+
       - name: Download exact macOS 15 package artifact
         uses: actions/download-artifact@v8
         with:
@@ -712,6 +729,9 @@ jobs:
 
       - name: Prepare trusted containment runtime
         run: pnpm prepare:containment
+
+      - name: Prepare trusted update worker
+        run: pnpm prepare:update-worker
 
       - name: Provision real protected Windows containment service
         if: runner.os == 'Windows'

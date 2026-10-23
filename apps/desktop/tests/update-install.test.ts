@@ -259,7 +259,6 @@ describe('downloaded update installation', () => {
       activeCallCount: (): number => 0,
       tunnelRunning: async (): Promise<boolean | 'unverifiable'> => tunnel,
       install,
-      maxWaitMs: 50,
       pollIntervalMs: 10,
       quietPeriodMs: 20,
     });
@@ -297,19 +296,23 @@ describe('downloaded update installation', () => {
     expect(install).toHaveBeenCalledWith(false);
   });
 
-  it('forces installation after a bounded grace period once the user has confirmed an update', async () => {
+  it('preserves active work after manual confirmation and waits for a full idle window', async () => {
     vi.useFakeTimers();
+    let active = 1;
     const install = vi.fn();
     const coordinator = new UpdateInstallCoordinator({
-      activeCallCount: (): number => 1,
+      activeCallCount: (): number => active,
       install,
-      maxWaitMs: 50,
       pollIntervalMs: 10,
       quietPeriodMs: 20,
     });
 
     coordinator.requestInstall();
-    await vi.advanceTimersByTimeAsync(49);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(install).not.toHaveBeenCalled();
+    expect(coordinator.hasPendingInstall()).toBe(true);
+    active = 0;
+    await vi.advanceTimersByTimeAsync(29);
     expect(install).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
 

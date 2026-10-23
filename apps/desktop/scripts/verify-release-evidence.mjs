@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { verifyCapabilityBridgeArtifacts } from './verify-capability-bridge-artifacts.mjs';
 import { validateMacosSigningPolicyEvidence } from './inspect-macos-signing-policy.mjs';
 import { validateContainmentEvidence } from './verify-containment-artifacts.mjs';
+import { validateUpdateWorkerEvidence } from './verify-update-worker-artifacts.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runtimeDependencies = JSON.parse(await readFile(path.join(desktopRoot, 'src', 'main', 'runtime-dependencies.json'), 'utf8'));
@@ -112,6 +113,7 @@ for (const runtime of provenance.runtime) {
 }
 if (requiredRuntime.size > 0) throw new Error(`Runtime provenance is incomplete: ${[...requiredRuntime].join(', ')}`);
 validateContainmentEvidence(provenance.containment, provenance.runtime, provenance.platform);
+validateUpdateWorkerEvidence(provenance.updateWorker, provenance.runtime, provenance.platform);
 if (macSigning) {
   const rootExecutable = provenance.runtime.find((entry) => entry.relativePath === 'Contents/MacOS/lnwjud');
   validateMacosSigningPolicyEvidence(macSigning.policy, {
@@ -161,6 +163,8 @@ function requiredRuntimePaths(platform, arch) {
       'resources/native-containment/lnwjud-containment-pin.node',
       'resources/native-containment/manifest.json',
       'resources/native-containment/process-runtime.mjs',
+      'resources/update-worker/lnwjud-update-worker.exe',
+      'resources/update-worker/manifest.json',
       'resources/windows-capability-bridge.ps1',
       'resources/windows-capability-bridge.sha256',
       'resources/windows-capability-bridge.integrity.json',

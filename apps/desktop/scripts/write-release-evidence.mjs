@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validateMacosSigningPolicyEvidence } from './inspect-macos-signing-policy.mjs';
 import { validateContainmentEvidence } from './verify-containment-artifacts.mjs';
+import { validateUpdateWorkerEvidence } from './verify-update-worker-artifacts.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(desktopRoot, '..', '..');
@@ -35,6 +36,7 @@ if (runtimeEvidence.platform !== platform) throw new Error(`Runtime evidence pla
 const capabilityBridge = platform === 'win32' ? validateCapabilityBridge(runtimeEvidence) : null;
 const macSigning = platform === 'darwin' ? validateMacSigning(runtimeEvidence) : null;
 const containment = validateContainmentEvidence(runtimeEvidence.containment, runtimeEvidence.files, platform);
+const updateWorker = validateUpdateWorkerEvidence(runtimeEvidence.updateWorker, runtimeEvidence.files, platform);
 
 const artifactNames = expectedArtifactNames(platform, version, runtimeEvidence.arch);
 const artifacts = [];
@@ -69,6 +71,7 @@ const provenance = {
   },
   capabilityBridge,
   containment,
+  updateWorker,
   artifacts,
   runtime: runtimeEvidence.files,
 };

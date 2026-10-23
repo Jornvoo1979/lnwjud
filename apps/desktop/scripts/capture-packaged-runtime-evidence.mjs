@@ -6,6 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { verifyCapabilityBridgeArtifacts } from './verify-capability-bridge-artifacts.mjs';
 import { verifyContainmentArtifacts } from './verify-containment-artifacts.mjs';
+import { verifyUpdateWorkerArtifacts } from './verify-update-worker-artifacts.mjs';
 import {
   readMacosSigningPolicyEvidence,
   validateMacosSigningPolicyEvidence,
@@ -25,6 +26,8 @@ const TARGETS = Object.freeze({
       ['containment-pin', 'resources/native-containment/lnwjud-containment-pin.node'],
       ['containment-manifest', 'resources/native-containment/manifest.json'],
       ['containment-runtime', 'resources/native-containment/process-runtime.mjs'],
+      ['update-worker', 'resources/update-worker/lnwjud-update-worker.exe'],
+      ['update-worker-manifest', 'resources/update-worker/manifest.json'],
       ['windows-capability-bridge.ps1', 'resources/windows-capability-bridge.ps1'],
       ['windows-capability-bridge.sha256', 'resources/windows-capability-bridge.sha256'],
       ['windows-capability-bridge.integrity.json', 'resources/windows-capability-bridge.integrity.json'],
@@ -119,6 +122,10 @@ export async function collectPackagedRuntimeEvidence(context, { allowIncompleteM
     platform,
   });
 
+  const updateWorker = platform === 'win32' ? await verifyUpdateWorkerArtifacts({
+    directory: path.join(appOutDir, 'resources/update-worker'),
+    compiledBundlePath: path.join(desktopRoot, 'dist/main/main.js'),
+  }) : null;
   let signing;
   if (platform === 'darwin') {
     const mode = signingReceipts[0]?.mode ?? 'unsigned';
@@ -143,7 +150,7 @@ export async function collectPackagedRuntimeEvidence(context, { allowIncompleteM
       ...(policy ? { policy } : {}),
     };
   }
-  return { schemaVersion: 1, platform, arch, capabilityBridge, containment, files, ...(signing ? { signing } : {}) };
+  return { schemaVersion: 1, platform, arch, capabilityBridge, containment, updateWorker, files, ...(signing ? { signing } : {}) };
 }
 
 async function assertRegularCanonicalFile(filePath, label) {

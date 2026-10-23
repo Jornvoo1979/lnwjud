@@ -109,6 +109,7 @@ apps/desktop/build/platform-verification-*.json
 apps/desktop/build/capability-bridge/
 apps/desktop/build/native-host/
 apps/desktop/build/native-containment/
+apps/desktop/build/update-worker/
 !docs/benchmarks/
 docs/benchmarks/*
 !docs/benchmarks/BASELINE.md
