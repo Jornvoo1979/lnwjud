@@ -1,5 +1,14 @@
 # Windows packaging
 
+**v5.9.0 acceptance:** Local packaging does not publish a release or prove the
+automatic updater. Unattended installation is currently unavailable on every
+distribution. The normal `latest.yml`/`portable.yml` feeds below preserve
+distribution selection for checking, downloading and user-requested installs;
+they do not establish package authority, global drain, health or trusted
+rollback. A fresh final-source installer/service matrix and real signed updater
+acceptance are required before release. Earlier installed candidates and
+checks are recorded in the [acceptance ledger](../codebase/2026-10-20-v5.9.0-issues-213-217-acceptance.md).
+
 The lnwjud desktop package is built with Electron and packaged for **Windows 10/11 x64** as both an NSIS installer and a single-file portable executable. The graphical Electron application carries its own Electron runtime; a separate system Node installation is not required merely to open the dashboard.
 
 The packaged MCP stdio launcher is self-contained: `lnwjud-mcp-stdio.cmd` launches the packaged Electron host with `--mcp-stdio`. No private Node executable or generated CJS bundle is shipped, and installed users do not need a separate system Node.js installation for stdio MCP or OpenAI Secure MCP Tunnel.
