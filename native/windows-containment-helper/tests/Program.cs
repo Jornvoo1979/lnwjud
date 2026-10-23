@@ -24,6 +24,8 @@ internal static class NativeTests
             switch (args[0])
             {
                 case "noop": return 0;
+                case "pipe-acl": ServicePipeSecurityTests.Run(); return 0;
+                case "stale-tunnel-alias": StaleTunnelAliasTests.Run(); return 0;
                 case "endpoint-probe":
                     if (args.Length != 2) throw new ArgumentException("Expected installed service executable path");
                     try
@@ -106,6 +108,7 @@ internal static class NativeTests
                     }
                     finally { Console.WriteLine("NATIVE_IMPORT_SUITE_PROTECTED_EVIDENCE_RETAINED " + importRoot); }
                 case "output-tests":
+                    TestOutputWaitsForReservationRelease().GetAwaiter().GetResult();
                     TestServiceRpcIdentityAndReservationsAsync();
                     TestOutputReaderFailure().GetAwaiter().GetResult();
                     TestOutputStoreRetention();
@@ -171,11 +174,14 @@ internal static class NativeTests
             TestServiceRestartAndJobReconciliation();
             Console.WriteLine("PASS service restart reconciles dead jobs, preserves live descendants, and cancels cleanly");
             TestServicePipeRefusesPreexistingInstance();
+            ServicePipeSecurityTests.Run();
+            StaleTunnelAliasTests.Run();
             Console.WriteLine("PASS service pipe refuses pre-existing pipe instances");
             TestAuthenticatedPipeCallerCapture();
             Console.WriteLine("PASS pipe caller SID and primary token come from the connected kernel-authenticated client");
             TestCallerLaunchSessionPolicy();
             Console.WriteLine("PASS headless launch session policy preserves caller security and fails closed on mismatch");
+            TestOutputWaitsForReservationRelease().GetAwaiter().GetResult();
             TestServiceRpcIdentityAndReservationsAsync();
             Console.WriteLine("PASS service RPC derives caller identity from the pipe and persists admission before replying");
             TestOutputReaderFailure().GetAwaiter().GetResult();
@@ -1545,14 +1551,9 @@ internal static class NativeTests
                 using var launched = await SendServiceRpcAsync(pipeName, Request("run"));
                 if (!prepared.RootElement.GetProperty("ok").GetBoolean() || !launched.RootElement.GetProperty("ok").GetBoolean())
                     throw new Exception("Output scenario did not launch");
-                for (var retry = 0; retry < 200; retry++)
-                {
-                    if (ledger.Inspect(identity, callerSid).Phase == ServiceAttemptPhase.TerminalVerified) break;
-                    await Task.Delay(20);
-                }
-                if (ledger.Inspect(identity, callerSid).Phase != ServiceAttemptPhase.TerminalVerified
-                    || ledger.Inspect(identity, callerSid).ReservationHeld)
-                    throw new Exception("Output persistence state prevented native terminal proof and release");
+                var terminal = await WaitForOutputReservationRelease(ledger, identity, callerSid);
+                if (terminal.Phase != ServiceAttemptPhase.TerminalVerified || terminal.ReservationHeld)
+                    throw new Exception($"Output persistence state prevented native terminal proof and release. phase={terminal.Phase} held={terminal.ReservationHeld} reason={terminal.Reason} persistenceFailure={failPersistence}");
                 using var output = await SendServiceRpcAsync(pipeName, Request("read_output"));
                 if (!output.RootElement.GetProperty("ok").GetBoolean()) throw new Exception("Output scenario read failed");
                 var result = output.RootElement.GetProperty("result");
@@ -1579,6 +1580,34 @@ internal static class NativeTests
                 }
             }
         }
+    }
+
+    private static async Task<ServiceAttemptObservation> WaitForOutputReservationRelease(ServiceAttemptLedger ledger, ServiceAttemptIdentity identity, string callerSid)
+    {
+        for (var retry = 0; retry < 200; retry++)
+        {
+            var observation = ledger.Inspect(identity, callerSid);
+            if (observation.Phase == ServiceAttemptPhase.TerminalVerified && !observation.ReservationHeld) return observation;
+            await Task.Delay(20);
+        }
+        return ledger.Inspect(identity, callerSid);
+    }
+
+    private static async Task TestOutputWaitsForReservationRelease()
+    {
+        var ledger = new ServiceAttemptLedger();
+        var request = NewServiceAttemptRequest("output-release-observation", Path.Combine(Path.GetTempPath(), "output-release-observation"));
+        ledger.Prepare(request);
+        ledger.TryCommitDispatch(request.Identity, request.AuthenticatedCallerSid, request.OperationDigest);
+        var terminal = ledger.RecordTerminal(request.Identity, request.AuthenticatedCallerSid, ServiceProcessOutcome.Completed, 0, 0);
+        if (!terminal.ReservationHeld) throw new Exception("Terminal-before-release arrangement lost its reservation");
+        var waiting = WaitForOutputReservationRelease(ledger, request.Identity, request.AuthenticatedCallerSid);
+        if (waiting.IsCompleted) throw new Exception("Output completion observer returned before native reservation release");
+        ledger.Release(request.Identity, request.AuthenticatedCallerSid);
+        var released = await waiting;
+        if (released.Phase != ServiceAttemptPhase.TerminalVerified || released.ReservationHeld)
+            throw new Exception("Output completion observer did not report terminal release");
+        Console.WriteLine("PASS output completion waits through terminal-before-reservation-release state");
     }
 
     private static void TestOutputStoreRetention()

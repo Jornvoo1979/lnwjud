@@ -21,6 +21,8 @@ internal static class Program
         try
         {
             using var executablePin = new FileStream(Environment.ProcessPath ?? throw new IOException("HELPER_PATH_UNAVAILABLE"), FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (args.Length == 1 && args[0] == "clear-stale-tunnel-alias")
+                return await StaleTunnelAlias.RunAsync(Console.OpenStandardInput(), Console.OpenStandardOutput()).ConfigureAwait(false);
             if (args.Length == 2 && args[0] == "service-rpc") return await RunServiceRpcAsync(args[1]).ConfigureAwait(false);
             if (args.Length == 2 && args[0] == "service-watch") return await WindowsContainmentServiceClient.RunWatcherAsync(args[1], Console.OpenStandardInput(), Console.OpenStandardOutput(), Console.OpenStandardError()).ConfigureAwait(false);
 #if !NATIVE_CONTAINMENT_TESTS

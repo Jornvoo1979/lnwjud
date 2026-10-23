@@ -18,6 +18,20 @@ export interface WindowsNativeAuthorityConfiguration {
   readonly workerModuleSha256?: string;
 }
 export type WindowsNativeAuthorityConfig = WindowsNativeAuthorityConfiguration;
+interface StaleTunnelAliasCleanupLocation {
+  readonly stateRoot: string;
+  readonly alias: 'lnwjud';
+  readonly profileDirectory: string;
+}
+export type StaleTunnelAliasCleanupRequest = StaleTunnelAliasCleanupLocation & ({
+  readonly recoveryOnly: true;
+} | {
+  readonly recoveryOnly?: false;
+  readonly expectedTunnelId: string;
+  readonly expectedPid: number;
+  readonly expectedAliasesSha256: string;
+  readonly expectedProcessesSha256: string;
+});
 export type NativeProcessObservation =
   | { readonly state: 'launch_not_started'; readonly binding: NativeAttemptBinding }
   | { readonly state: 'running'; readonly binding: NativeAttemptBinding; readonly targetPid: number }
@@ -90,6 +104,48 @@ export class WindowsNativeAuthority {
     this.client = client ?? new ProcessWindowsContainmentServiceClient(configuration);
   }
   public get config(): WindowsNativeAuthorityConfiguration { return this.configuration; }
+
+  public async clearStaleTunnelAlias(request: StaleTunnelAliasCleanupRequest): Promise<void> {
+    if (process.platform !== 'win32') throw new Error('TUNNEL_STALE_WINDOWS_REQUIRED');
+    const payload = Buffer.from(JSON.stringify(request), 'utf8');
+    if (payload.length > 16 * 1024) throw new Error('TUNNEL_STALE_REQUEST_TOO_LARGE');
+    const pinned = await pinVerifiedHelper(this.configuration);
+    const child = spawn(this.configuration.helper.executable, ['clear-stale-tunnel-alias'], {
+      windowsHide: true, shell: false, env: helperEnvironment(), stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let complete = false;
+    try {
+      const output: Buffer[] = [];
+      let outputBytes = 0;
+      let overflow = false;
+      child.stdout.on('data', (chunk: Buffer) => {
+        outputBytes += chunk.length;
+        if (outputBytes > 16 * 1024) { overflow = true; child.kill(); return; }
+        output.push(Buffer.from(chunk));
+      });
+      child.stderr.resume();
+      const completion = childCompletion(child, 15_000);
+      child.stdin.on('error', (): void => undefined);
+      child.stdin.end(payload);
+      const exitCode = await completion;
+      complete = true;
+      if (overflow || outputBytes === 0) throw new Error('TUNNEL_STALE_RESPONSE_INVALID');
+      const result: unknown = JSON.parse(Buffer.concat(output).toString('utf8'));
+      if (!isRecord(result)) throw new Error('TUNNEL_STALE_RESPONSE_INVALID');
+      if (exitCode !== 0 || result.ok !== true) {
+        throw new Error(typeof result.error === 'string' && /^TUNNEL_STALE_[A-Z_]+$/.test(result.error)
+          ? result.error : 'TUNNEL_STALE_CLEANUP_FAILED');
+      }
+      if (request.recoveryOnly === true && result.recovered === false) return;
+      if (typeof result.processesSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(result.processesSha256)
+        || typeof result.aliasesSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(result.aliasesSha256)) {
+        throw new Error('TUNNEL_STALE_RESPONSE_INVALID');
+      }
+    } finally {
+      if (!complete) child.kill();
+      pinned.close();
+    }
+  }
 
   public attachProcess(input: NativeAttemptBinding): NativeAttemptHandle {
     const binding = parseNativeAttemptBinding(input);

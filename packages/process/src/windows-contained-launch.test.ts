@@ -13,10 +13,14 @@ describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => 
     try {
       const trusted = await nativeFixture(root);
       const directory = path.join(root, 'attempt');
+      const environment = {
+        ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psexecutionpolicypreference')),
+        PSExecutionPolicyPreference: 'Restricted',
+      };
       const invocation = await prepareWindowsContainedLaunch({
         ...trusted, directory, executable: process.execPath, cwd: root, timeoutMs: outcome === 'timed_out' ? 200 : 10000,
-        environment: { ...process.env, PSExecutionPolicyPreference: 'Restricted' },
-        args: ['-e', outcome === 'completed' ? 'console.log("CHILD_OUTPUT")' : 'console.log("CHILD_OUTPUT");setInterval(()=>{},1000)'],
+        environment,
+        args: ['-e', outcome === 'completed' ? 'console.log("CHILD_OUTPUT");console.log("POLICY="+process.env.PSExecutionPolicyPreference)' : 'console.log("CHILD_OUTPUT");setInterval(()=>{},1000)'],
       });
       const child = spawn(invocation.executable, [...invocation.args], { windowsHide: true, env: { ...invocation.environment, PSExecutionPolicyPreference: 'Restricted' } });
       const closed = once(child, 'close');
@@ -26,7 +30,10 @@ describe.skipIf(process.platform !== 'win32')('contained launch receipt', () => 
       if (outcome === 'cancelled') expect((await invocation.cancel()).state).toBe('terminal_verified');
       await closed;
       expect(await readWindowsContainmentReceipt(path.join(directory, 'containment.receipt.json'), { ...trusted, directory })).toMatchObject({ kind: 'windows_job_v2', outcome, activeProcesses: 0 });
-      if (outcome === 'completed') expect(stdout).toContain('CHILD_OUTPUT');
+      if (outcome === 'completed') {
+        expect(stdout).toContain('CHILD_OUTPUT');
+        expect(stdout).toContain('POLICY=Restricted');
+      }
     } finally { await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
   }, 20000);
 });

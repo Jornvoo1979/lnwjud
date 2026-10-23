@@ -1108,6 +1108,9 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     },
   );
   const tunnelController = new TunnelController({
+    ...(nativeAuthority === undefined ? {} : {
+      clearStaleTunnelAlias: (request): Promise<void> => nativeAuthority.clearStaleTunnelAlias(request),
+    }),
     getClientPath: (): string | null => settingsRepository.get(CLIENT_PATH_SETTING),
     getBundledClientPath: bundledTunnelClientPath,
     setClientPath: (value: string): void => { settingsRepository.set(CLIENT_PATH_SETTING, value); },

@@ -31,8 +31,7 @@ internal static class WindowsContainmentServiceClient
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(RequestTimeout(requestBytes));
-        using var pipe = new NamedPipeClientStream(".", WindowsContainmentService.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await pipe.ConnectAsync(timeout.Token).ConfigureAwait(false);
+        using var pipe = await ServicePipeSecurity.ConnectClientAsync(WindowsContainmentService.PipeName, timeout.Token).ConfigureAwait(false);
         using var endpoint = VerifyServerIdentity(pipe.SafePipeHandle, expectedSha256);
 
         var header = new byte[sizeof(int)];

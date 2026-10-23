@@ -114,7 +114,13 @@ internal static class WindowsContainmentService
                     continue;
                 }
 
+#if NATIVE_CONTAINMENT_TESTS
+                var pipe = useCurrentUserTestLauncher
+                    ? ServicePipeSecurity.CreateCurrentUserTestServer(pipeName, firstInstance)
+                    : ServicePipeSecurity.CreateServer(pipeName, firstInstance);
+#else
                 var pipe = ServicePipeSecurity.CreateServer(pipeName, firstInstance);
+#endif
                 firstInstance = false;
                 try
                 {

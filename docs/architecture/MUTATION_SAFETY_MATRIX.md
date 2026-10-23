@@ -210,6 +210,10 @@ The database runtime rejects DML/DDL such as `DELETE`, `UPDATE`, `DROP`, and mul
 | `engineering_upload_worker` | Creates a remote Cloudflare Worker version from the exact signed captured artifact and host-held credential; it does not shift live traffic. The current goal lease and contract target remain required. | One upload dispatch is followed by version-ID and script-etag readback. An unresolved upload is not retried automatically because the remote side effect may already have succeeded. |
 | `recover_blocked_goal` | Reopens only the same terminal blocked goal for its owner, using explicit user confirmation and the current revision. Recovery rechecks effective policy, stable source identity, and prior blocking-task liveness before issuing a fresh lease. | Completed, cancelled, superseded, stale-revision, or untrustworthy-liveness cases remain closed; recovery does not create a schedule. |
 
+### Windows service pipe authority
+
+The protected containment service grants authenticated clients specific duplex data rights, excluding `FILE_CREATE_PIPE_INSTANCE`. LocalSystem and administrators retain server-instance creation rights. The native client opens with compatible exact rights and impersonation SQOS, then verifies the connected service identity before sending and after receiving a response. Isolated restricted-token tests prove that authenticated data exchange remains available while competing server instances are denied. Test-only current-user server grants are excluded from production builds. Source review and those tests do not replace installed SCM, signed-package, or distinct-user acceptance.
+
 ## Primitive inventory audit
 
 | Class | Reviewed production examples | Safety disposition |

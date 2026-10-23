@@ -10,6 +10,7 @@
     <StartupObject>Lnwjud.Containment.NativeTests</StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../StaleTunnelAlias.cs" Link="StaleTunnelAlias.cs" />
     <Compile Include="../ServiceEndpointIdentity.cs" Link="ServiceEndpointIdentity.cs" />
     <Compile Include="../ServiceAttemptLedgerPersistence.cs" Link="ServiceAttemptLedgerPersistence.cs" />
     <Compile Include="../ServiceAttemptLedger.cs" Link="ServiceAttemptLedger.cs" />
