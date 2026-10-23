@@ -24,6 +24,21 @@ export async function confirmTunnelStopForUpdate(options: UpdateTunnelStopConfir
   return options.confirmStop();
 }
 
+/** Revalidate after a potentially long backup, immediately before native install. */
+export async function silentInstallStillSafe(options: {
+  readonly enabled: () => boolean;
+  readonly activeCalls: () => number;
+  readonly tunnelStopped: () => Promise<boolean>;
+}): Promise<boolean> {
+  if (!options.enabled() || options.activeCalls() !== 0) return false;
+  try {
+    if (!await options.tunnelStopped()) return false;
+  } catch {
+    return false;
+  }
+  return options.enabled() && options.activeCalls() === 0;
+}
+
 export interface UpdateReadyDialogOptions {
   readonly type: 'info';
   readonly title: string;

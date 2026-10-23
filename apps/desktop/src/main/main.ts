@@ -106,7 +106,7 @@ import { parseOpenExternalSetupPageRequest, resolveExternalSetupUrl } from './ex
 import { shouldHoldSingleInstanceLock, wantsMcpStdio } from './instance-lock.js';
 import { createLogViewerWindow, createMainWindow, createMutationApprovalWindow, getRendererEntryPath, isAllowedRendererUrl } from './window.js';
 import { createTrayMenuTemplate, createTrayToolTip, createTrayUpdateLabel, getTrayIconPath, shouldHideMainWindowOnClose } from './tray.js';
-import { confirmTunnelStopForUpdate, UpdateInstallCoordinator, updateInstallNeedsTunnelStopConfirmation, type UpdateSharedActivitySnapshot } from './update-install.js';
+import { confirmTunnelStopForUpdate, silentInstallStillSafe, UpdateInstallCoordinator, updateInstallNeedsTunnelStopConfirmation, type UpdateSharedActivitySnapshot } from './update-install.js';
 import { UpdateCheckScheduler } from './update-check-scheduler.js';
 import {
   configureUpdaterForDistribution,
@@ -2207,7 +2207,15 @@ function initAutoUpdater(runtime: DesktopRuntime): void {
           void runtime.createBackup('pre-update').catch((error: unknown) => {
             console.error(`Pre-update backup failed: ${error instanceof Error ? error.message : 'unknown error'}`);
             if (unattended) throw error;
-          }).then(() => {
+          }).then(async () => {
+            if (unattended && !await silentInstallStillSafe({
+              enabled: () => silentUpdateEnabled(desktopUserSettings),
+              activeCalls: () => runtime.activityTracker.listInFlight().length,
+              tunnelStopped: () => tunnelStoppedForSilentInstall(runtime),
+            })) {
+              patchUpdateStatus({ phase: 'ready', message: 'Unattended installation deferred: activity or Secure Tunnel changed after backup.', canInstall: true });
+              return;
+            }
             if (usesElectronUpdaterInstall(updaterDistribution)) {
               if (updaterDistribution === 'macos') {
                 // Squirrel.Mac validates the signature after native checkForUpdates.

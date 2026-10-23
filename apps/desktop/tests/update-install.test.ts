@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TunnelStatus } from '@lnwjud/ipc-contracts';
-import { confirmTunnelStopForUpdate, UpdateDownloadedDialogController, UpdateInstallCoordinator, updateInstallNeedsTunnelStopConfirmation, updateReadyDialogOptions, type UpdateSharedActivitySnapshot } from '../src/main/update-install.js';
+import { confirmTunnelStopForUpdate, silentInstallStillSafe, UpdateDownloadedDialogController, UpdateInstallCoordinator, updateInstallNeedsTunnelStopConfirmation, updateReadyDialogOptions, type UpdateSharedActivitySnapshot } from '../src/main/update-install.js';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -228,6 +228,27 @@ describe('downloaded update installation', () => {
 
     expect(install).not.toHaveBeenCalled();
     expect(sharedActivitySnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('revalidates unattended install safety when activity or Tunnel changes during backup', async () => {
+    let enabled = true;
+    let active = 0;
+    let tunnel = true;
+    const check = (): Promise<boolean> => Promise.resolve(tunnel);
+    const valid = (): Promise<boolean> => silentInstallStillSafe({
+      enabled: () => enabled,
+      activeCalls: () => active,
+      tunnelStopped: check,
+    });
+    await expect(valid()).resolves.toBe(true);
+    active = 1;
+    await expect(valid()).resolves.toBe(false);
+    active = 0;
+    tunnel = false;
+    await expect(valid()).resolves.toBe(false);
+    tunnel = true;
+    enabled = false;
+    await expect(valid()).resolves.toBe(false);
   });
 
   it('never force-installs an unattended update while a running or unverifiable tunnel is observed', async () => {

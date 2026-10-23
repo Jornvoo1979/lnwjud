@@ -28,6 +28,7 @@ const RELEASE_NOTES: readonly ReleaseNote[] = [
         titleKey: 'whatsNew.category.safety',
         items: [
           { id: 'managed-task-lifetime-proof', titleKey: 'whatsNew.590.tasks.title', descriptionKey: 'whatsNew.590.tasks.description', badge: 'improved', tags: ['Windows', 'Restricted', 'native containment', 'writer admission'] },
+          { id: 'writer-lease-orphan-recovery', titleKey: 'whatsNew.590.recovery.title', descriptionKey: 'whatsNew.590.recovery.description', badge: 'fixed', tags: ['Goal', 'writer lease', 'fencing', 'continuation'] },
           { id: 'repository-import-publication', titleKey: 'whatsNew.590.import.title', descriptionKey: 'whatsNew.590.import.description', badge: 'improved', tags: ['Git import', 'publication identity', 'recovery'] },
         ],
       },

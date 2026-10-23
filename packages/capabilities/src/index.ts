@@ -26,7 +26,7 @@ export type CapabilityToolName = (typeof capabilityToolNames)[number];
 export { prohibitedAgentCommandReason } from './agent-command-policy.js';
 export { SecureRepositoryImportRuntime } from './repository-import-runtime.js';
 export { SharedManagedWriterAdmission } from './shared-managed-writer-admission.js';
-export { SqliteWorkspaceWriterLease, type WorkspaceWriterLeasePort, type WorkspaceWriterLeaseProof, type WorkspaceWriterLeaseStatus } from './workspace-writer-lease.js';
+export { SqliteWorkspaceWriterLease, WORKSPACE_WRITER_STALE_GRACE_MS, type WorkspaceWriterLeaseAbandonment, type WorkspaceWriterLeaseRevocation, type WorkspaceWriterLeasePort, type WorkspaceWriterLeaseProof, type WorkspaceWriterLeaseStatus } from './workspace-writer-lease.js';
 
 export interface CapabilityService {
   execute(tool: CapabilityToolName, input: unknown, signal?: AbortSignal, authorization?: InvocationAuthorization): Promise<Result<unknown>>;

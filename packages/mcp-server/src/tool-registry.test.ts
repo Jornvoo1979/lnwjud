@@ -152,6 +152,88 @@ describe('MCP tool registry', () => {
     }
   });
 
+  it('does not block goal lifecycle tools (claim_scheduled_continuation, run_goal) behind workspace writer lease', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'lnwjud-mcp-goal-tools-unblocked-'));
+    try {
+      const lease = new SqliteWorkspaceWriterLease(path.join(root, 'leases.sqlite'));
+      // Pre-acquire an active writer lease with a different session ID
+      const priorLease = await lease.acquire('workspace-a', actor.clientId, 'dead-worker-session', 600);
+      expect(priorLease.ok).toBe(true);
+
+      const claimCalled = vi.fn(async () => ok({
+        outcome: 'recurring_acquired' as const,
+        continuation: { continuationId: 'cont-1', goalId: 'goal-1', status: 'scheduled' } as never,
+        goal: { goalId: 'goal-1', status: 'active', revision: 1 } as never,
+        leaseToken: 'token-123',
+        leaseGeneration: 1,
+        acquisition: 'normal' as const,
+        runKey: 'run-key-1',
+        nextRequiredAction: 'continue_work_with_existing_recurring_watchdog' as const,
+        currentWakeMayReturn: false as const,
+      }));
+      const runGoalCalled = vi.fn(async () => ok({
+        goalId: 'goal-1',
+        goalKey: 'gk-1',
+        revision: 1,
+        status: 'active' as const,
+        acquired: true,
+        leaseToken: 'lease-token-1',
+        leaseGeneration: 1,
+        leaseExpiresAt: new Date(Date.now() + 600_000).toISOString(),
+        plan: { steps: [] },
+      }));
+
+      const registry = new ToolRegistry({
+        workspaceWriterLease: lease,
+        scheduledContinuations: {
+          claimScheduledContinuation: claimCalled,
+          getScheduledContinuation: async () => null,
+        } as never,
+        goals: { runGoal: runGoalCalled } as never,
+        file: {
+          readFile: async () => err(appError('FILE_NOT_FOUND', 'not found')),
+          editFile: async () => ok({ path: 'file.ts', replacements: 1, bytesWritten: 1 }),
+        } as never,
+      }, actor, {
+        sessionId: 'new-chat-wake-session',
+        profileProvider: (): typeof permissionProfiles.full => permissionProfiles.full,
+        authorizationModeProvider: (): 'full_bypass' => 'full_bypass',
+      });
+
+      // 1. claim_scheduled_continuation must succeed and reach service, NOT be rejected by writer lease
+      const claimResult = await registry.invoke('claim_scheduled_continuation', {
+        continuationId: 'cont-1',
+        workspaceId: 'workspace-a',
+        goalId: 'goal-1',
+      });
+      expect(claimResult.isError).not.toBe(true);
+      expect(claimCalled).toHaveBeenCalledTimes(1);
+
+      // 2. run_goal must succeed and reach service, NOT be rejected by writer lease
+      const runResult = await registry.invoke('run_goal', {
+        workspaceId: 'workspace-a',
+        goalKey: 'gk-1',
+        objective: 'Test unblocked run_goal',
+      });
+      expect(runResult.isError).not.toBe(true);
+      expect(runGoalCalled).toHaveBeenCalledTimes(1);
+
+      // 3. BUT actual workspace mutation (edit_file) WITHOUT writer lease proof is still blocked by writer lease!
+      const editResult = await registry.invoke('edit_file', {
+        workspaceId: 'workspace-a',
+        path: 'file.ts',
+        oldText: 'a',
+        newText: 'b',
+      });
+      expect(editResult.isError).toBe(true);
+      expect(editResult).toMatchObject({
+        structuredContent: { error: { code: 'CONFLICT' } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('fences workspace indexing mutations as well as file writes across independent clients', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'lnwjud-writer-lease-index-'));
     try {
