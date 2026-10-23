@@ -4,7 +4,7 @@ import process from 'node:process';
 import { URL } from 'node:url';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { authenticateEnvelope, authenticateHistoricalEnvelope, canonicalBase64, domain, hash, loadProductionPolicy,
@@ -138,7 +138,7 @@ test('caller digest policy supports exact source commits and refuses literal or 
 });
 
 test('publication never overwrites existing output; bounded file hashes real bytes', async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-envelope-'));
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-envelope-')));
   try {
     const filename = path.join(directory, 'envelope.json'); const bytes = disposableFixture().bytes;
     await publishEnvelope(filename, bytes);
@@ -151,7 +151,7 @@ test('publication never overwrites existing output; bounded file hashes real byt
 });
 
 test('previous descriptor binds exact original envelope, package and provenance bytes', async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'lnwjud-previous-'));
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lnwjud-previous-')));
   try {
     const fixture = disposableFixture(); const artifact = Buffer.from('previous package'); const provenance = Buffer.from('{}');
     fixture.payload.artifact.sha256 = hash(artifact); fixture.payload.artifact.sizeBytes = String(artifact.length);
