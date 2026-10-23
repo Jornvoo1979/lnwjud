@@ -95,12 +95,34 @@ internal sealed class WindowsStoreIO : IDisposable
 
     private SafeFileHandle OpenFile(string filename, uint access, uint creation, uint flags = 0, uint share = 5)
     {
-        var handle = CreateFileW(filename, access, share, IntPtr.Zero, creation, flags | OpenReparse, IntPtr.Zero);
+        var descriptor = IntPtr.Zero;
+        var attributesPointer = IntPtr.Zero;
+        SafeFileHandle handle;
+        var openError = 0;
+        try
+        {
+            if (creation is 1 or 4)
+            {
+                using var identity = WindowsIdentity.GetCurrent();
+                var sid = identity.User?.Value ?? throw new Refusal("USER_IDENTITY_UNAVAILABLE");
+                if (!ConvertStringSecurityDescriptorToSecurityDescriptorW($"O:{sid}D:P(A;;FA;;;{sid})(A;;FA;;;SY)(A;;FA;;;BA)", 1, out descriptor, out _))
+                    throw new Refusal("JOURNAL_ACL_UNAVAILABLE");
+                var attributes = new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(), Descriptor = descriptor };
+                attributesPointer = Marshal.AllocHGlobal(attributes.Length);
+                Marshal.StructureToPtr(attributes, attributesPointer, false);
+            }
+            handle = CreateFileW(filename, access, share, attributesPointer, creation, flags | OpenReparse, IntPtr.Zero);
+            if (handle.IsInvalid) openError = Marshal.GetLastWin32Error();
+        }
+        finally
+        {
+            if (attributesPointer != IntPtr.Zero) Marshal.FreeHGlobal(attributesPointer);
+            if (descriptor != IntPtr.Zero) _ = LocalFree(descriptor);
+        }
         if (handle.IsInvalid)
         {
-            var error = Marshal.GetLastWin32Error();
             handle.Dispose();
-            if (error == 2) throw new FileNotFoundException();
+            if (openError == 2) throw new FileNotFoundException();
             throw new Refusal("JOURNAL_FILE_UNAVAILABLE");
         }
         try { ValidateFile(handle, MaximumJournalBytes); return handle; }

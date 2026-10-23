@@ -28,6 +28,7 @@ internal static class Program
         }
         worker = args.Single();
         DefaultOwnerProbe();
+        assertions += StoreCreationTests.Run();
         await OwnershipAndProtocol();
         foreach (var boundary in new[] { "stage-flushed", "publication-readback", "preauth-committed" }) await CrashRecovery(boundary);
         await TerminalStageRecovery();
