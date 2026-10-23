@@ -38,6 +38,7 @@
     "prepare:containment": "node apps/desktop/scripts/prepare-containment-runtime.mjs",
     "prepare:update-worker": "node apps/desktop/scripts/prepare-update-worker.mjs",
     "test:update-worker": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-update-worker.ps1",
+    "test:update-release-metadata": "node --test scripts/update-trust/release-envelope.test.mjs scripts/update-trust/pinned-verifier.test.mjs",
     "test:update-worker-trust": "node apps/desktop/scripts/verify-built-update-worker.mjs"
   },
   "devDependencies": {

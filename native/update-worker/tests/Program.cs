@@ -15,6 +15,12 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "metadata-tests")
+        {
+            _ = ReleaseMetadataTests.Run();
+            _ = ReleaseMetadataTests.RunInterop(args[1]);
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "crash-child")
         {
             using var core = new UpdateWorkerCore(args[1], Installation, boundary =>
@@ -26,9 +32,13 @@ internal static class Program
             _ = core.Execute(new Command("crash", "request", "release-1", 1));
             return 92;
         }
-        worker = args.Single();
+        if (args.Length is < 1 or > 2) throw new Exception("UPDATE_WORKER_TEST_ARGUMENTS_INVALID");
+        worker = args[0];
+        var metadataFixture = Path.GetFullPath(args.Length == 2 ? args[1] : Path.Combine("tests", "fixtures", "update-release", "metadata-v1.json"));
         DefaultOwnerProbe();
         assertions += StoreCreationTests.Run();
+        assertions += ReleaseMetadataTests.Run();
+        assertions += ReleaseMetadataTests.RunInterop(metadataFixture);
         await OwnershipAndProtocol();
         foreach (var boundary in new[] { "stage-flushed", "publication-readback", "preauth-committed" }) await CrashRecovery(boundary);
         await TerminalStageRecovery();
@@ -157,28 +167,56 @@ internal static class Program
         var root = Root();
         using (var io = new WindowsStoreIO(root)) { }
         var path = Path.Combine(root, "journal.json");
-        File.WriteAllText(path, "{broken");
+        PublishFixture(root, Wire.Utf8.GetBytes("{broken"));
         using (var child = new Child(root))
         {
             var result = await child.Send(CommandLine("recover"));
-            Check(Kind(result) == "held" && result["generation"] is null && result["revision"] is null, "corrupt held unknown positions");
+            Check(Kind(result) == "held" && result["generation"] is null && result["revision"] is null, "corrupt held unknown positions " + Describe(result));
             Check(File.ReadAllText(path) == "{broken", "corruption preserved");
         }
         var payload = new JsonObject { ["transactionId"] = Guid.NewGuid().ToString("D"), ["phase"] = "installing", ["effects"] = "unknown" };
         var journal = new Journal(2, 3, "none", WindowsStoreIO.CurrentOwner(), payload);
-        File.WriteAllBytes(path, journal.Encode(Installation));
-        using (var child = new Child(root)) Check(Reason(await child.Send(CommandLine("recover"))) == "UNSUPPORTED_PENDING_PHASE", "ambiguous effect held");
+        PublishFixture(root, journal.Encode(Installation));
+        using (var child = new Child(root))
+        {
+            var result = await child.Send(CommandLine("recover"));
+            Check(Reason(result) == "UNSUPPORTED_PENDING_PHASE", "ambiguous effect held " + Describe(result));
+        }
         payload["phase"] = "preauth"; payload["requestId"] = "pending"; payload["releaseId"] = "release"; payload["policyRevision"] = 1; payload["effects"] = "none"; payload["history"] = new JsonArray();
-        File.WriteAllBytes(path, journal.Encode(Installation));
-        using (var child = new Child(root)) Check(Reason(await child.Send(CommandLine("recover"))) == "PREVIOUS_OWNER_UNVERIFIED", "live previous PID failclosed");
+        PublishFixture(root, journal.Encode(Installation));
+        using (var child = new Child(root))
+        {
+            var result = await child.Send(CommandLine("recover"));
+            Check(Reason(result) == "PREVIOUS_OWNER_UNVERIFIED", "live previous PID failclosed " + Describe(result));
+        }
         ((JsonArray)payload["history"]!).Add(new JsonObject { ["requestId"] = "request-1", ["releaseId"] = "release-1", ["policyRevision"] = 1, ["transactionId"] = Guid.NewGuid().ToString("D") });
-        File.WriteAllBytes(path, journal.Encode(Installation));
+        PublishFixture(root, journal.Encode(Installation));
         using (var child = new Child(root)) Check(Kind(await child.Send(Request())) == "held", "historical receipt cannot bypass pending transaction hold");
         var original = File.ReadAllBytes(path);
         var staged = new Journal(3, 4, new string('b', 64), WindowsStoreIO.CurrentOwner(), payload);
-        File.WriteAllBytes(Path.Combine(root, "journal.pending.json"), staged.Encode(Installation));
-        using (var child = new Child(root)) Check(Reason(await child.Send(CommandLine("recover"))) == "PENDING_STATE_UNVERIFIED", "stage CAS conflict held");
+        using (var io = new WindowsStoreIO(root)) io.Stage(staged.Encode(Installation));
+        CheckFixtureOwner(Path.Combine(root, "journal.pending.json"));
+        using (var child = new Child(root))
+        {
+            var result = await child.Send(CommandLine("recover"));
+            Check(Reason(result) == "PENDING_STATE_UNVERIFIED", "stage CAS conflict held " + Describe(result));
+        }
         Check(File.ReadAllBytes(path).SequenceEqual(original), "conflict preserves current");
+    }
+    private static void PublishFixture(string root, byte[] bytes)
+    {
+        using (var io = new WindowsStoreIO(root))
+        {
+            var previous = io.Read("journal.json");
+            io.Stage(bytes); io.PublishStage(previous?.Digest ?? "none");
+        }
+        CheckFixtureOwner(Path.Combine(root, "journal.json"));
+    }
+    private static void CheckFixtureOwner(string filename)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var owner = new FileInfo(filename).GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier));
+        Check(owner == identity.User, "semantic journal fixture must be owned by user before testing phase recovery");
     }
     private static async Task TerminalStageRecovery()
     {
@@ -213,8 +251,9 @@ internal static class Program
             denied = false; try { File.Delete(Path.Combine(root, "owner.lock")); } catch (IOException) { denied = true; }
             Check(denied, "lock inode cannot replace");
         }
-        var original = Path.Combine(root, "outside.json"); File.WriteAllText(original, "sentinel");
-        Check(CreateHardLinkW(Path.Combine(root, "journal.json"), original, IntPtr.Zero), "hardlink fixture");
+        var original = Path.Combine(root, "outside.json");
+        PublishFixture(root, Wire.Utf8.GetBytes("sentinel"));
+        Check(CreateHardLinkW(original, Path.Combine(root, "journal.json"), IntPtr.Zero), "hardlink fixture");
         using (var child = new Child(root)) Check(Reason(await child.Send(CommandLine("recover"))) == "JOURNAL_FILE_UNSAFE", "hardlink refused");
         Check(File.ReadAllText(original) == "sentinel", "hardlink target preserved");
         var junction = root + "-junction";

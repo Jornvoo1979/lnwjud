@@ -72,6 +72,9 @@ jobs:
         shell: bash
         run: pnpm test:version
 
+      - name: Test release metadata and verifier trust
+        run: pnpm test:update-release-metadata
+
       - name: Run portable typecheck
         shell: bash
         run: pnpm typecheck

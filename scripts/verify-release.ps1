@@ -66,6 +66,7 @@ try {
     Invoke-ReleaseStage 'test:version' @('test:version')
     Invoke-ReleaseStage 'prepare:containment' @('prepare:containment')
     Invoke-ReleaseStage 'prepare:update-worker' @('prepare:update-worker')
+    Invoke-ReleaseStage 'test:update-release-metadata' @('test:update-release-metadata')
     Invoke-ReleaseStage 'test:update-worker' @('test:update-worker')
     if ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_OS -eq 'Windows') {
         Write-Host '==> provision hash-attested protected Windows containment CI service'

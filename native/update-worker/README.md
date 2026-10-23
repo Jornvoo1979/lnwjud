@@ -1,6 +1,6 @@
 # Native update worker foundation
 
-The selected updater design makes the native worker own a durable update transaction. Electron launches one authenticated packaged child and uses a narrow inherited stdin/stdout protocol. This first unit implements ownership, journal publication, pre-authentication refusal, and recovery. **Automatic installation is unavailable.** No response permits falling back to the former unattended installer path.
+The selected updater design makes the native worker own a durable update transaction. Electron launches one authenticated packaged child and uses a narrow inherited stdin/stdout protocol. The foundation implements ownership, journal publication, pre-authentication refusal, and recovery. A separate native verifier authenticates release metadata against embedded policy. **Automatic installation is unavailable.** No response permits falling back to the former unattended installer path.
 
 The worker has no installer execution, package download/authentication, signer verification, privileged execution, global MCP/job/Goal admission fence, tunnel stop/restoration, migration, restart/version/health acceptance, or rollback implementation. Its per-store native lock does not prove shared-service quiescence. macOS and other platforms have no native implementation here. Windows Authenticode release acceptance, signed package provenance, production installation, actual power-loss testing, and macOS production acceptance remain open boundaries. Process-kill tests prove process interruption recovery only.
 
@@ -65,3 +65,19 @@ corepack pnpm@10.15.0 test:update-worker-trust
 The executable argument can instead point to the separately published packaged worker. Tests launch real separate processes, kill only their own fixture child after durable boundaries, and verify exclusive ownership, owner-death generation fencing, stage/current reconciliation, terminal refusal startup behavior, durable idempotency/CAS, corruption and ambiguous-effect holds, readonly calls, pinned root/lock identity, hardlinks, and junction refusal. Fixtures use isolated OS temporary directories; they never target the user's installed application or Tunnel data.
 
 Production package preparation is owned by `apps/desktop/scripts/prepare-update-worker.mjs`. It does not rebuild or replace the existing containment helper. Test/build success for this foundation must not be reported as a working automatic updater or permission to release.
+
+## Release metadata authentication
+
+The authoritative [metadata contract](release-metadata-contract.md) defines the shared strict producer/consumer schema. The native assembly embeds the exact checked-in `config/update-release-schema.json` and `config/update-release-policy.json`. Production roots and authorities remain empty; a valid disposable test envelope returns `RELEASE_TRUST_UNCONFIGURED` under production policy. No environment, cwd, CLI or stream field supplies a public key or policy override.
+
+`ReleaseMetadataVerifier.VerifyOffer` checks P-256/SHA-256 with fixed P1363 signatures over the domain-separated exact payload bytes, strict shared structure, source/target identities, time/floors, replay/quarantine, exact retained authenticated baseline identities, and compatible recovery contracts. Its immutable result is authenticated **metadata** plus a trust-snapshot-bound receipt. It does not authenticate downloaded package bytes or the operating-system publisher, write acceptance floors, close admission, or launch anything. Historical expired baseline eligibility requires retained original acceptance and explicit current non-revoked key policy; the offer result grants no rollback permission.
+
+`VerifyRecoveryMetadata` additionally requires the exact failed transaction, accepted trust position, quarantined candidate identity, fresh exact recovery authorization and one remaining attempt. It also returns metadata only. Neither method is exposed as a new production stdio operation. Native baseline storage, trusted time acquisition, package acquisition/pinning/publisher validation, and admission integration are later units.
+
+The native test harness accepts this separate **test-only** mode:
+
+```powershell
+& native/update-worker/tests/bin/Debug/net8.0/win-x64/Lnwjud.UpdateWorker.Tests.exe metadata-tests E:/lnwjud/tests/fixtures/update-release/metadata-v1.json
+```
+
+The tracked fixture contains disposable public policy and Node-signed candidate/baseline bytes; no private key is retained. The real .NET verifier accepts those exact bytes only under the internal test policy and rejects them under the embedded production policy. Shared adversarial byte fixtures run through both decoders. This proves metadata interoperability, not package installation or end-to-end updater acceptance.

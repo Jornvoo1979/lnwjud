@@ -12,5 +12,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DebugType>none</DebugType>
   </PropertyGroup>
-  <ItemGroup><Compile Remove="tests/**/*.cs" /></ItemGroup>
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <EmbeddedResource Include="../../config/update-release-schema.json" LogicalName="Lnwjud.UpdateWorker.update-release-schema.json" />
+    <EmbeddedResource Include="../../config/update-release-policy.json" LogicalName="Lnwjud.UpdateWorker.update-release-policy.json" />
+  </ItemGroup>
 </Project>
