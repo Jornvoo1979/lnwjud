@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Lnwjud.UpdateWorker;
 
 [SupportedOSPlatform("windows")]
@@ -25,6 +27,7 @@ internal static class Program
             return 92;
         }
         worker = args.Single();
+        DefaultOwnerProbe();
         await OwnershipAndProtocol();
         foreach (var boundary in new[] { "stage-flushed", "publication-readback", "preauth-committed" }) await CrashRecovery(boundary);
         await TerminalStageRecovery();
@@ -39,6 +42,45 @@ internal static class Program
     private static void Check(bool condition, string message) { assertions++; if (!condition) throw new Exception(message); }
     private static string Kind(JsonObject value) => value["result"]!["kind"]!.GetValue<string>();
     private static string Reason(JsonObject value) => value["result"]!["reason"]!.GetValue<string>();
+    private static string Describe(JsonObject value)
+    {
+        static string Symbol(JsonNode? node)
+        {
+            if (node is not JsonValue item || !item.TryGetValue<string>(out var text) || text.Length > 128
+                || !text.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.')) return "UNKNOWN";
+            return text;
+        }
+        return "kind=" + Symbol(value["result"]?["kind"]) + " reason=" + Symbol(value["result"]?["reason"])
+            + " generation=" + Symbol(value["generation"]) + " revision=" + Symbol(value["revision"]);
+    }
+    private static void DefaultOwnerProbe()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var root = Root();
+        var startup = "READY";
+        try { using var io = new WindowsStoreIO(root); }
+        catch (Refusal error) { startup = error.Reason; }
+        catch (Exception) { startup = "STORE_UNEXPECTED_FAILURE"; }
+        var probe = Path.Combine(root, "default-owner-probe.txt");
+        var rootExists = Directory.Exists(root);
+        try { if (rootExists) File.WriteAllText(probe, "isolated-default-owner-probe"); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        static IdentityReference? ReadOwner(string filename)
+        {
+            try { return File.Exists(filename) ? new FileInfo(filename).GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) : null; }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+        }
+        static string Equal(IdentityReference? observed, IdentityReference? expected) => observed is null ? "UNKNOWN" : (observed == expected).ToString();
+        var owner = ReadOwner(probe);
+        var lockPath = Path.Combine(root, "owner.lock");
+        var lockExists = File.Exists(lockPath);
+        var lockOwner = ReadOwner(lockPath);
+        var elevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        Console.WriteLine($"UPDATE_WORKER_OWNER_PROBE tokenOwnerEqualsUser={identity.Owner == identity.User} rootExists={rootExists} defaultFileOwnerEqualsUser={Equal(owner, identity.User)} defaultFileOwnerEqualsTokenOwner={Equal(owner, identity.Owner)} lockExists={lockExists} lockOwnerEqualsUser={Equal(lockOwner, identity.User)} elevatedAdmin={elevated} nativeStore={startup}");
+        if (owner is not null) Check(owner == identity.Owner, "native default file owner must match observed token default owner");
+    }
     private static JsonObject Request(string id = "request-1", string generation = "0", string revision = "0", string release = "release-1") => new()
     { ["protocol"] = 1, ["requestId"] = id, ["command"] = "request", ["releaseId"] = release, ["policyRevision"] = 1,
         ["expectedGeneration"] = generation, ["expectedRevision"] = revision };
@@ -70,7 +112,7 @@ internal static class Program
         var root = Root();
         using (var first = new Child(root))
         {
-            var empty = await first.Send(CommandLine("recover")); Check(Kind(empty) == "none" && empty["generation"]!.GetValue<string>() == "0", "fresh startup ready");
+            var empty = await first.Send(CommandLine("recover")); Check(Kind(empty) == "none" && empty["generation"]!.GetValue<string>() == "0", "fresh startup ready " + Describe(empty));
             Check(!File.Exists(Path.Combine(root, "journal.json")), "recover read-only empty");
             using (var second = new Child(root)) Check(Reason(await second.Send(CommandLine("recover"))) == "OWNER_BUSY", "separate OS lock owner");
             var capabilities = await first.Send(CommandLine("capabilities")); Check(Kind(capabilities) == "capabilities", "capabilities");

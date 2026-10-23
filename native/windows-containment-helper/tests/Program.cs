@@ -109,6 +109,7 @@ internal static class NativeTests
                     finally { Console.WriteLine("NATIVE_IMPORT_SUITE_PROTECTED_EVIDENCE_RETAINED " + importRoot); }
                 case "output-tests":
                     TestOutputWaitsForReservationRelease().GetAwaiter().GetResult();
+                    TestCancellationWaitsForReservationRelease().GetAwaiter().GetResult();
                     TestServiceRpcIdentityAndReservationsAsync();
                     TestOutputReaderFailure().GetAwaiter().GetResult();
                     TestOutputStoreRetention();
@@ -182,6 +183,7 @@ internal static class NativeTests
             TestCallerLaunchSessionPolicy();
             Console.WriteLine("PASS headless launch session policy preserves caller security and fails closed on mismatch");
             TestOutputWaitsForReservationRelease().GetAwaiter().GetResult();
+            TestCancellationWaitsForReservationRelease().GetAwaiter().GetResult();
             TestServiceRpcIdentityAndReservationsAsync();
             Console.WriteLine("PASS service RPC derives caller identity from the pipe and persists admission before replying");
             TestOutputReaderFailure().GetAwaiter().GetResult();
@@ -1388,20 +1390,10 @@ internal static class NativeTests
             System.Text.Json.JsonDocument? terminal = null;
             try
             {
-                for (var attempt = 0; attempt < 100; attempt++)
-                {
-                    using var inspected = await SendServiceRpcAsync(pipeName, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
+                terminal = await WaitForRpcReservationRelease(() => SendServiceRpcAsync(pipeName, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
                     {
                         protocol = 3, command = "inspect", identity = Identity("rpc-attempt-1", operationDigest),
-                    }));
-                    var observation = inspected.RootElement.GetProperty("result");
-                    if (observation.GetProperty("phase").GetInt32() == (int)ServiceAttemptPhase.TerminalVerified)
-                    {
-                        terminal = System.Text.Json.JsonDocument.Parse(observation.GetRawText());
-                        break;
-                    }
-                    await Task.Delay(20);
-                }
+                    })));
                 if (terminal is null
                     || terminal.RootElement.GetProperty("outcome").GetInt32() != (int)ServiceProcessOutcome.Cancelled
                     || terminal.RootElement.GetProperty("activeProcesses").GetInt32() != 0
@@ -1591,6 +1583,41 @@ internal static class NativeTests
             await Task.Delay(20);
         }
         return ledger.Inspect(identity, callerSid);
+    }
+
+    private static async Task<System.Text.Json.JsonDocument?> WaitForRpcReservationRelease(Func<Task<System.Text.Json.JsonDocument>> inspect)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            using var inspected = await inspect();
+            var observation = inspected.RootElement.GetProperty("result");
+            if (observation.GetProperty("phase").GetInt32() == (int)ServiceAttemptPhase.TerminalVerified
+                && !observation.GetProperty("reservationHeld").GetBoolean())
+                return System.Text.Json.JsonDocument.Parse(observation.GetRawText());
+            await Task.Delay(20);
+        }
+        return null;
+    }
+
+    private static async Task TestCancellationWaitsForReservationRelease()
+    {
+        var ledger = new ServiceAttemptLedger();
+        var request = NewServiceAttemptRequest("cancel-release-observation", Path.Combine(Path.GetTempPath(), "cancel-release-observation"));
+        ledger.Prepare(request);
+        ledger.TryCommitDispatch(request.Identity, request.AuthenticatedCallerSid, request.OperationDigest);
+        var terminal = ledger.RecordTerminal(request.Identity, request.AuthenticatedCallerSid, ServiceProcessOutcome.Cancelled, 0, 0);
+        if (!terminal.ReservationHeld) throw new Exception("Cancellation arrangement lost its terminal-held reservation");
+        var waiting = WaitForRpcReservationRelease(() => Task.FromResult(System.Text.Json.JsonSerializer.SerializeToDocument(
+            new { result = ledger.Inspect(request.Identity, request.AuthenticatedCallerSid) },
+            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase })));
+        if (waiting.IsCompleted) throw new Exception("Cancellation RPC observer returned before native reservation release");
+        ledger.Release(request.Identity, request.AuthenticatedCallerSid);
+        using var released = await waiting;
+        if (released is null || released.RootElement.GetProperty("reservationHeld").GetBoolean()
+            || released.RootElement.GetProperty("outcome").GetInt32() != (int)ServiceProcessOutcome.Cancelled
+            || released.RootElement.GetProperty("activeProcesses").GetInt32() != 0)
+            throw new Exception("Cancellation RPC observer did not report Job-zero cancellation and release");
+        Console.WriteLine("PASS cancellation RPC waits through terminal-before-reservation-release state");
     }
 
     private static async Task TestOutputWaitsForReservationRelease()
