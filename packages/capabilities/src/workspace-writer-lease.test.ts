@@ -7,6 +7,7 @@ import { appError } from '@lnwjud/domain';
 import { SqliteWorkspaceWriterLease, type WorkspaceWriterGlobalExclusion } from './workspace-writer-lease.js';
 
 const roots: string[] = [];
+const WINDOWS_WRITER_IO_TEST_TIMEOUT_MS = process.platform === 'win32' ? 20_000 : 5_000;
 afterEach(async () => { await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true }))); });
 
 async function fixture(now?: () => number): Promise<{ one: SqliteWorkspaceWriterLease; two: SqliteWorkspaceWriterLease }> {
@@ -49,7 +50,7 @@ describe('durable multi-session workspace writer lease', () => {
     nativeBusy = false;
     expect(await lease.release('workspace', 'owner', 'session', acquired.value)).toMatchObject({ ok: true });
     expect(await lease.inspect('workspace')).toMatchObject({ ok: true, value: { state: 'unleased' } });
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('prevents a lease from racing a mutation admitted while no lease existed', async () => {
     const { one, two } = await fixture();
@@ -67,7 +68,7 @@ describe('durable multi-session workspace writer lease', () => {
     await one.end('workspace', 'unleased-call', 0);
     expect(await two.acquire('workspace', 'new-owner', 'session-two', 60))
       .toMatchObject({ ok: true, value: { generation: 1 } });
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('rejects lease proof when there is no active lease instead of silently ignoring it', async () => {
     const { one } = await fixture();

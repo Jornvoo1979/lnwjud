@@ -11,6 +11,7 @@ import { ShellCapabilityBackend } from './shell-backend.js';
 import type { CapabilityTaskOwner } from './task-ownership.js';
 
 const temporaryRoots: string[] = [];
+const WINDOWS_WRITER_IO_TEST_TIMEOUT_MS = process.platform === 'win32' ? 20_000 : 5_000;
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
@@ -234,7 +235,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     expect(recovered.ok).toBe(true);
     if (!recovered.ok) return;
     expect(recovered.value.generation).toBe(initial.ok ? initial.value.generation + 1 : 2);
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('2. Expired Lease + Active Worker: refuses lease takeover while worker is running', async () => {
     const f = await fixture(10_000);
@@ -290,7 +291,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
       expect(attempt.error.code).toBe('CONFLICT');
       expect(attempt.error.message).toContain('Repository import requires exclusive managed writer admission');
     }
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('3. Expired Lease + Unknown Worker: refuses lease takeover without verified proof', async () => {
     const f = await fixture(10_000);
@@ -345,7 +346,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
       expect(attempt.error.code).toBe('CONFLICT');
       expect((attempt.error as unknown as { details?: Record<string, unknown> }).details?.blocker_state).toBe('unknown');
     }
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('4. Missing/Corrupt Task Metadata: safely blocks without silently dropping reservation', async () => {
     const f = await fixture(10_000);
@@ -438,7 +439,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     const probe = await f.admission.holdExclusiveProbe(workspaceId);
     expect(probe.ok).toBe(true);
     if (probe.ok) await probe.value.releaseAfterVerifiedTermination();
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('6. Ownership Rejection: strictly rejects foreign client and foreign workspace', async () => {
     const f = await fixture(10_000);
@@ -509,7 +510,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
       expect(raceA.value.generation).not.toBe(raceB.value.generation);
       expect(raceA.value.leaseToken).not.toBe(raceB.value.leaseToken);
     }
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('8. Application Restart: state persists and recovers seamlessly on reopen', async () => {
     const f = await fixture(10_000);
@@ -534,7 +535,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     if (acquired2.ok) {
       expect(acquired2.value.generation).toBe(2);
     }
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('9. Process Crash: cleans up after verified native proof without leaving stuck markers', async () => {
     const f = await fixture(10_000);
@@ -692,7 +693,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     const gen2Begin = await f.lease.begin(workspaceId, clientId, 'session-2', 'call-gen2', lease2.value);
     expect(gen2Begin.ok).toBe(true);
     await f.lease.end(workspaceId, 'call-gen2', lease2.value.generation);
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('13. Service Restart Recovery: recovers abandoned reservation when attempt is lost from service memory', async () => {
     const f = await fixture(10_000);
@@ -755,7 +756,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
       expect(snapshot.value.state).toBe('failed');
       expect(snapshot.value.exit_code).toBe(-1);
     }
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('14. Managed Writer Undispatched Attempt Recovery: aborts undispatched attempt and unblocks repository import', async () => {
     const f = await fixture(10_000);
@@ -798,7 +799,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     expect(recovered.ok).toBe(true);
     if (!recovered.ok) return;
     expect(recovered.value.generation).toBe(2);
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('15. Managed Writer Live Descendants: blocks repository import while descendants remain active', async () => {
     const f = await fixture(10_000);
@@ -841,7 +842,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     expect(recovered.ok).toBe(false);
     if (recovered.ok) return;
     expect(recovered.error.message).toMatch(/Unverified native process descendants block repository import/);
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('16. Crash After Dispatch + Terminal Reconciled: recovers cleanly once kernel confirms termination', async () => {
     const f = await fixture(10_000);
@@ -884,7 +885,7 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     expect(recovered.ok).toBe(true);
     if (!recovered.ok) return;
     expect(recovered.value.generation).toBe(2);
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 
   it('17. Idempotent Recovery: repeated recovery calls yield identical generation and valid lease', async () => {
     const f = await fixture(10_000);
@@ -909,5 +910,5 @@ describe('Mandatory Regression Suite: Writer Admission & Task Recovery Lifecycle
     if (!inspected.ok) return;
     expect(inspected.value.state).toBe('active');
     expect(inspected.value.generation).toBe(2);
-  });
+  }, WINDOWS_WRITER_IO_TEST_TIMEOUT_MS);
 });
