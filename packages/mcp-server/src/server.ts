@@ -14,6 +14,7 @@ import { ToolRegistry, type ActiveProjectScope, type AuthorizationMode, type Hos
 import type { SetOfMarksObservationStore } from './set-of-marks-service.js';
 import { BUNDLED_PONYTAIL_SKILL_ID, PonytailActivationLedger } from './ponytail-runtime.js';
 import { actorForRequestScope, type McpRequestScope } from './request-scope.js';
+import { z } from 'zod';
 
 export const MCP_OUTCOME_DRIVEN_INSTRUCTIONS = [
   'Continue using lnwjud tools until the requested outcome is complete.',
@@ -51,6 +52,8 @@ export interface McpServerOptions {
   /** Host-owned active project set. The first scope is the primary/default workspace. */
   readonly activeWorkspaceScopesProvider?: () => readonly WorkspaceScope[] | Promise<readonly WorkspaceScope[]>;
   readonly hostMutationApprovalProvider?: (request: HostMutationApprovalRequest) => boolean | Promise<boolean>;
+  /** Optional Host-owned Production memory read; absent by default. */
+  readonly productionProjectMemoryRecall?: (query: string, limit?: number) => Promise<unknown>;
   /** @deprecated Request-selected workspace lookup is not an authorization boundary. */
   readonly workspaceScopeResolver?: (workspaceId: string) => WorkspaceScope | null | Promise<WorkspaceScope | null>;
   /** @deprecated Compatibility alias for activeWorkspaceScopeProvider. */
@@ -173,6 +176,40 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     });
     if (!initiallyExposed.has(tool.name)) registeredTool.disable();
     registeredTools.set(tool.name, registeredTool);
+  }
+
+  // Production recall is explicitly opt-in and never originates from remote MCP inputs.
+  // Require Host policy, audit, and active workspace before exposing the tool.
+  if (options.productionProjectMemoryRecall !== undefined
+    && options.hostMutationApprovalProvider !== undefined
+    && options.profileProvider !== undefined
+    && options.activityTracker !== undefined
+    && options.activeWorkspaceScopeProvider !== undefined) {
+    const recall = options.productionProjectMemoryRecall;
+    const tracker = options.activityTracker;
+    server.registerTool('project_memory_recall', {
+      description: 'Production-only local project-memory recall; requires native Desktop approval on every read.',
+      inputSchema: { query: z.string().trim().min(1).max(400), limit: z.number().int().min(1).max(10).optional() },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    }, async ({ query, limit }, context): Promise<CallToolResult> => {
+      const started = Date.now();
+      let callId: string | undefined;
+      try {
+        const scope = await options.activeWorkspaceScopeProvider!();
+        if (scope === null || scope.workspaceId.trim().length === 0) throw Error('No active Host workspace');
+        callId = await tracker.begin('project_memory_recall',
+          { workspaceId: scope.workspaceId }, readTraceContext(context), 'standard');
+        const blocked = options.invocationGuardProvider?.();
+        if (typeof blocked === 'string' && blocked.trim().length > 0) throw Error('Invocation blocked');
+        if (options.profileProvider!().defaults.READ !== 'ALLOW') throw Error('Read permission denied');
+        const value = await recall(query, limit);
+        await tracker.end(callId, 'SUCCESS', Date.now() - started);
+        return { content: [{ type: 'text', text: JSON.stringify(value) }] };
+      } catch {
+        if (callId !== undefined) await tracker.end(callId, 'PERMISSION_DENIED', Date.now() - started);
+        return { isError: true, content: [{ type: 'text', text: 'Project memory unavailable or denied' }] };
+      }
+    });
   }
 
   const syncRegisteredToolAvailability = (): void => {
