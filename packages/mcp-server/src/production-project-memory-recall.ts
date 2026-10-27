@@ -5,7 +5,7 @@
  * This does not migrate, import, or disclose any Staging memory bank.
  */
 import { createStagingSingleUserMemoryRecall } from './staging-project-memory-recall.js';
-import type { StagingMemoryReaderOptions } from './staging-project-memory-recall.js';
+import type { StagingMemoryReaderOptions, StagingHindsightEntry } from './staging-project-memory-recall.js';
 
 export function createProductionSingleUserMemoryRecall(options: StagingMemoryReaderOptions) {
   return createStagingSingleUserMemoryRecall({ ...options, approvalToolName: 'project_memory_recall' });
