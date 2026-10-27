@@ -61,6 +61,8 @@ import {
   createEngineeringArtifactVerifier,
   createEngineeringSourceStateProvider,
   RuntimeGoalManagedTaskStateReader,
+  createProductionSingleUserMemoryRecall,
+  recallProductionHindsight,
   createFileActivitySink,
   mcpActivityLogPath,
   type ActivitySinkEvent,
@@ -287,6 +289,7 @@ export interface DesktopRuntime {
 export interface DesktopRuntimeOptions {
   readonly permissionProfile?: PermissionProfileName;
   readonly hostMutationApprovalProvider?: (request: HostMutationApprovalRequest) => boolean | Promise<boolean>;
+  readonly productionProjectMemoryRecall?: boolean;
   readonly pdfProviderInstaller?: (dataPath: string) => Promise<InstalledPdfProvider>;
   readonly onInstallActivity?: (kind: 'ngrok' | 'pdf_provider', update: { readonly phase: InstallOperationPhase; readonly progressPercent: number | null; readonly message: string | null } | null) => void;
   readonly checkpointEncryptionKey?: Buffer;
@@ -844,6 +847,26 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
   // One transport-owned ledger is shared across Modern HTTP requests and the
   // Desktop read-only diagnostics view. It is not a per-Goal counter.
   const desktopContextEconomy = new ContextEconomyRuntime();
+  // Packaged Windows Production opt-in only; Host selects project, not the MCP caller.
+  const productionProjectMemoryRecall = process.platform === 'win32'
+    && options.productionProjectMemoryRecall === true
+    && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1'
+    && options.hostMutationApprovalProvider !== undefined
+    ? createProductionSingleUserMemoryRecall({
+      enabled: () => process.platform === 'win32'
+        && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1',
+      getSelectedWorkspace: async () => {
+        const selectedId = settingsRepository.get(selectedWorkspaceSettingKey);
+        if (selectedId === null) return null;
+        const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
+        if (selected === null || selected.id !== selectedId) return null;
+        return { workspaceId: selected.id, projectId: selected.id,
+          rootPath: selected.realRootPath, approved: true as const };
+      },
+      nativeApproval: options.hostMutationApprovalProvider,
+      recallBank: recallProductionHindsight,
+    })
+    : undefined;
   const mcpLifecycle = new DesktopMcpLifecycle({
     createServerOptions: (): McpHttpServerOptions => ({
       contextEconomy: desktopContextEconomy,
@@ -864,6 +887,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
         (await resolveActiveProjectWorkspaces()).map((workspace) => ({ workspaceId: workspace.id, rootPath: workspace.realRootPath }))
       ),
       ...(options.hostMutationApprovalProvider === undefined ? {} : { hostMutationApprovalProvider: options.hostMutationApprovalProvider }),
+      ...(productionProjectMemoryRecall === undefined ? {} : { productionProjectMemoryRecall }),
       codexToolsEnabledProvider: () => readSettings().codexToolsEnabled,
       ponytailModeProvider: () => readSettings().ponytailMode,
       engineeringHarnessEnabledProvider: (): boolean => {
