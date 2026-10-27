@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import { performance } from 'node:perf_hooks';
+import { existsSync } from 'node:fs';
 import { access, lstat, readFile } from 'node:fs/promises';
 import { autoUpdater } from 'electron-updater';
 import {
