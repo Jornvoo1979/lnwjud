@@ -22,7 +22,7 @@ async function connected(options: Parameters<typeof createMcpServer>[0]) {
 describe('Optional Production MCP tool Host authorization and audit boundary', () => {
   it('is not registered without Host permission, audit and selected-workspace providers', async () => {
     const run = vi.fn(async () => ({ results: [] }));
-    const f = await connected({ actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run });
+    const f = await connected({ actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run, hostMutationApprovalProvider: async () => true });
     try {
       const listed = await f.client.listTools();
       expect(listed.tools.some(tool => tool.name === name)).toBe(false);
@@ -36,7 +36,7 @@ describe('Optional Production MCP tool Host authorization and audit boundary', (
     const denied: PermissionProfile = { ...permissionProfiles.safe,
       defaults: { ...permissionProfiles.safe.defaults, READ: 'DENY' } };
     const f = await connected({
-      actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run,
+      actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run, hostMutationApprovalProvider: async () => true,
       activeWorkspaceScopeProvider: async () => scope,
       profileProvider: () => denied, activityTracker: tracker,
     });
@@ -53,7 +53,7 @@ describe('Optional Production MCP tool Host authorization and audit boundary', (
     const tracker = new ActivityTracker({ record: async event => { events.push(event); } });
     const run = vi.fn(async () => ({ results: [{ content: 'synthetic-only fixture memory' }] }));
     const f = await connected({
-      actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run,
+      actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run, hostMutationApprovalProvider: async () => true,
       activeWorkspaceScopeProvider: async () => scope,
       profileProvider: () => permissionProfiles.safe, activityTracker: tracker,
     });
@@ -72,7 +72,7 @@ describe('Optional Production MCP tool Host authorization and audit boundary', (
   it('denies when Host invocation guard blocks request even with read profile allowed', async () => {
     const run = vi.fn(async () => ({ results: [] }));
     const f = await connected({
-      actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run,
+      actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run, hostMutationApprovalProvider: async () => true,
       activeWorkspaceScopeProvider: async () => scope,
       profileProvider: () => permissionProfiles.safe,
       activityTracker: new ActivityTracker(),
