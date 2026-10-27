@@ -14,7 +14,7 @@ export function createProductionSingleUserMemoryRecall(options: StagingMemoryRea
 export async function recallProductionHindsight(bank: string, query: string, limit: number):
   Promise<readonly StagingHindsightEntry[]> {
   if (!/^project-[a-f0-9]{24}$/.test(bank)) throw Error('Invalid project bank');
-  // Fail closed: never fall back to the existing Production Hindsight service.
+  // Fail closed: this adapter may use only the explicitly configured Production loopback endpoint.
   const endpoint = process.env.LNWJUD_PRODUCTION_HINDSIGHT_URL?.trim();
   if (endpoint !== 'http://127.0.0.1:8888') throw Error('Production project-memory endpoint unavailable');
   const url = new URL(`/v1/default/banks/${bank}/memories/recall`, endpoint);
