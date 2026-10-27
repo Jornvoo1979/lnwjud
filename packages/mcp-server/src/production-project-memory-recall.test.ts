@@ -47,6 +47,34 @@ describe('Production project memory fail-closed boundary', () => {
     expect(recallBank).not.toHaveBeenCalled();
   });
 
+  it('denies and never touches the backend if the Host switches projects during approval', async () => {
+    const workspaceA = { workspaceId: 'Alpha', projectId: 'Alpha', rootPath: 'D:/Alpha', approved: true as const };
+    const workspaceB = { workspaceId: 'Beta', projectId: 'Beta', rootPath: 'D:/Beta', approved: true as const };
+    let current = workspaceA;
+    const recallBank = vi.fn(async () => []);
+    const reader = createProductionSingleUserMemoryRecall({
+      enabled: () => true,
+      getSelectedWorkspace: async () => current,
+      nativeApproval: async () => { current = workspaceB; return true; },
+      recallBank,
+    });
+    await expect(reader('selected project')).rejects.toThrow(/denied/);
+    expect(recallBank).not.toHaveBeenCalled();
+  });
+
+  it('refuses to disclose results after an in-flight Host workspace switch', async () => {
+    const workspaceA = { workspaceId: 'Alpha', projectId: 'Alpha', rootPath: 'D:/Alpha', approved: true as const };
+    const workspaceB = { workspaceId: 'Beta', projectId: 'Beta', rootPath: 'D:/Beta', approved: true as const };
+    let current = workspaceA;
+    const reader = createProductionSingleUserMemoryRecall({
+      enabled: () => true,
+      getSelectedWorkspace: async () => current,
+      nativeApproval: async () => true,
+      recallBank: async () => { current = workspaceB; return [{ content: 'secret-from-alpha', ref: 'fixture' }]; },
+    });
+    await expect(reader('selected project')).rejects.toThrow(/denied/);
+  });
+
   it('uses only localhost Production backend for a valid bank and never staging', async () => {
     vi.stubEnv('LNWJUD_PRODUCTION_HINDSIGHT_URL', 'http://127.0.0.1:8888');
     const network = vi.fn(async (_url: URL) => ({
