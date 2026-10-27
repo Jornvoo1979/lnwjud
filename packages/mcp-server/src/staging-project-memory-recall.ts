@@ -26,6 +26,8 @@ export interface StagingMemoryRecallResult {
 }
 export interface StagingMemoryReaderOptions {
   readonly enabled: () => boolean;
+  /** Exact tool identity displayed by the native consent window; staging is default. */
+  readonly approvalToolName?: 'candidate_project_memory_recall' | 'project_memory_recall';
   readonly getSelectedWorkspace: () => Promise<StagingApprovedProjectScope | null>;
   readonly nativeApproval: (request: HostMutationApprovalRequest) => boolean | Promise<boolean>;
   readonly recallBank: (bank: string, query: string, limit: number) => Promise<readonly StagingHindsightEntry[]>;
@@ -56,7 +58,7 @@ export function createStagingSingleUserMemoryRecall(options: StagingMemoryReader
       const before = await options.getSelectedWorkspace();
       if (!scopeValid(before) || !options.enabled()) return denied();
       const approved = await options.nativeApproval({
-        toolName: 'candidate_project_memory_recall',
+        toolName: options.approvalToolName ?? 'candidate_project_memory_recall',
         mutationKind: 'read',
         reason: 'Explicit single-use native Host approval for local project-memory disclosure',
         summary: `Read-only memory for project ${before.projectId} (workspace ${before.workspaceId}); exact query: ${JSON.stringify(query)}`,
