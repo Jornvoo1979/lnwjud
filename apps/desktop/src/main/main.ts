@@ -2674,6 +2674,7 @@ async function createNativeDesktopRuntime(dataPath: string): Promise<DesktopRunt
       ...(desktopLogSession.previous === null ? {} : { previousLogSessionStartedAt: desktopLogSession.previous.startedAt }),
     }),
     hostMutationApprovalProvider: requestMutationApproval,
+    productionProjectMemoryRecall: app.isPackaged && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1',
     pdfProviderInstaller: (rootPath) => installPdfProvider(rootPath, {
       fetchImpl: (url) => net.fetch(url, { redirect: 'follow' }),
       onProgress: (phase) => installActivity.set({ kind: 'pdf_provider', phase, progressPercent: null, message: null }),
