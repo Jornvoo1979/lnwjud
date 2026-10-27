@@ -30,6 +30,19 @@ describe('Optional Production MCP tool Host authorization and audit boundary', (
     } finally { await f.close(); }
   });
 
+  it('is not registered when the native Host approval provider is absent', async () => {
+    const run = vi.fn(async () => ({ results: [] }));
+    const f = await connected({
+      actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run,
+      activeWorkspaceScopeProvider: async () => scope,
+      profileProvider: () => permissionProfiles.safe, activityTracker: new ActivityTracker(),
+    });
+    try {
+      expect((await f.client.listTools()).tools.some(tool => tool.name === name)).toBe(false);
+      expect(run).not.toHaveBeenCalled();
+    } finally { await f.close(); }
+  });
+
   it('blocks denied READ profile before invoking local memory and audits the denial', async () => {
     const run = vi.fn(async () => ({ results: [] }));
     const tracker = new ActivityTracker();
