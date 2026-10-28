@@ -70,4 +70,75 @@ describe('opt-in Production lifecycle metadata only', () => {
     expect(seen.every((entry) => entry.startsWith('GET '))).toBe(true);
     capture.close();
   });
+  it('persists a final goal revision when a new sync arrives during an in-flight write', async () => {
+    vi.stubEnv('LNWJUD_PRODUCTION_HINDSIGHT_URL', 'http://127.0.0.1:8888');
+    let revision = 1;
+    let releaseFirstWrite: (() => void) | undefined;
+    let signalFirstWrite: (() => void) | undefined;
+    const firstWriteStarted = new Promise<void>((resolve): void => { signalFirstWrite = resolve; });
+    const firstWriteRelease = new Promise<void>((resolve): void => { releaseFirstWrite = resolve; });
+    const writes: string[] = [];
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const method = init?.method ?? 'GET';
+      if (method === 'POST') {
+        writes.push(String(init?.body ?? ''));
+        if (writes.length === 1) {
+          signalFirstWrite?.();
+          await firstWriteRelease;
+        }
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const capture = new ProductionAutomaticProjectMemory({
+      enabled: (): boolean => true,
+      selectedWorkspace: async (): Promise<typeof workspaceA> => workspaceA,
+      goalStatuses: async (): Promise<readonly { id: string; status: string; revision: number }[]> =>
+        [{ id: goal.id, status: 'active', revision }],
+      fetcher,
+    });
+    const first = capture.syncSelected();
+    await firstWriteStarted;
+    revision = 2;
+    const second = capture.syncSelected();
+    releaseFirstWrite?.();
+    await Promise.all([first, second]);
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toContain(':r1');
+    expect(writes[1]).toContain(':r2');
+    expect(writes[1]).toContain('Sampled goal status counts');
+    capture.close();
+  });
+
+  it('does not allow stale queued notifications to write after switching workspace', async () => {
+    vi.stubEnv('LNWJUD_PRODUCTION_HINDSIGHT_URL', 'http://127.0.0.1:8888');
+    let selected = workspaceA;
+    let releaseFirstWrite: (() => void) | undefined;
+    let signalFirstWrite: (() => void) | undefined;
+    const started = new Promise<void>((resolve): void => { signalFirstWrite = resolve; });
+    const release = new Promise<void>((resolve): void => { releaseFirstWrite = resolve; });
+    let writes = 0;
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      if (init?.method === 'POST') {
+        writes += 1;
+        signalFirstWrite?.();
+        await release;
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const capture = new ProductionAutomaticProjectMemory({
+      enabled: (): boolean => true,
+      selectedWorkspace: async (): Promise<typeof workspaceA> => selected,
+      goalStatuses: async (): Promise<readonly typeof goal[]> => [goal],
+      fetcher,
+    });
+    const first = capture.syncSelected();
+    await started;
+    const duplicate = capture.syncSelected();
+    selected = workspaceB;
+    releaseFirstWrite?.();
+    await Promise.all([first, duplicate]);
+    expect(writes).toBe(1);
+    capture.close();
+  });
+
 });
