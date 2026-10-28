@@ -1649,6 +1649,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
         if (existing.archivedAt !== undefined && existing.archivedAt !== null) await workspaceRepository.restore(existing.id);
         settingsRepository.set(selectedWorkspaceSettingKey, existing.id);
         await activateWorkspace(existing.id);
+        syncProductionAutomaticMemory();
         if (!mcpLifecycle.status().running) await mcpLifecycle.start();
         const restored = await workspaceRepository.getAny(existing.id);
         if (restored === null) throw new Error('Workspace could not be restored');
@@ -1658,6 +1659,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
       const workspace = unwrap(await workspaceService.add(displayName, request.rootPath), 'Workspace could not be added');
       settingsRepository.set(selectedWorkspaceSettingKey, workspace.id);
       await activateWorkspace(workspace.id);
+      syncProductionAutomaticMemory();
       if (!mcpLifecycle.status().running) {
         await mcpLifecycle.start();
       }
@@ -2400,6 +2402,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
         return mcpLifecycle.start();
       }
       await activateWorkspace(selected.id);
+      syncProductionAutomaticMemory();
       return mcpLifecycle.start();
     },
     autoStartWatcher: (): Promise<string | null> => startWatcher(),
