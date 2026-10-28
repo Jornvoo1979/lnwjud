@@ -5,7 +5,14 @@ import { createStagingSingleUserMemoryRecall } from './staging-project-memory-re
 const initial = { workspaceId: 'StagingAlpha', projectId: 'approved-project-alpha', approved: true as const, rootPath: 'D:\\StagingAlpha' };
 const bank = 'project-' + createHash('sha256').update(initial.projectId).digest('hex').slice(0, 24);
 
-function fixture() {
+function fixture(): {
+  read: ReturnType<typeof createStagingSingleUserMemoryRecall>;
+  prompts: unknown[];
+  banks: string[];
+  setEnabled: (v: boolean) => void;
+  setAllowed: (v: boolean) => void;
+  changeWorkspace: () => void;
+} {
   let enabled = true, allow = true, workspace = { ...initial };
   const prompts: unknown[] = [];
   const banks: string[] = [];
@@ -17,9 +24,9 @@ function fixture() {
   });
   return {
     read, prompts, banks,
-    setEnabled: (v: boolean) => { enabled = v; },
-    setAllowed: (v: boolean) => { allow = v; },
-    changeWorkspace: () => { workspace = { ...initial, workspaceId: 'StagingBeta', rootPath: 'D:\\StagingBeta' }; },
+    setEnabled: (v: boolean): void => { enabled = v; },
+    setAllowed: (v: boolean): void => { allow = v; },
+    changeWorkspace: (): void => { workspace = { ...initial, workspaceId: 'StagingBeta', rootPath: 'D:\\StagingBeta' }; },
   };
 }
 
