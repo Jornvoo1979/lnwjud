@@ -232,7 +232,7 @@ import { readNativeCrashDumpMetadata } from './native-crash-diagnostics.js';
 import { readRuntimeDiagnosticsHistory } from './runtime-diagnostics-history.js';
 import { createRetryableShutdown } from './desktop-shutdown.js';
 import { DesktopMcpLifecycle } from './mcp-lifecycle.js';
-import { ProductionAutomaticProjectMemory } from './production-automatic-project-memory.js';
+import { ProductionAutomaticProjectMemory, type ProductionMemoryGoal, type ProductionMemoryWorkspace } from './production-automatic-project-memory.js';
 import { WorkLogViewState } from './work-log-view-state.js';
 import { installPdfProvider, type InstalledPdfProvider } from './pdf-provider-installer.js';
 import { RemoteMcpController } from './remote-mcp-controller.js';
@@ -854,16 +854,16 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_CAPTURE === '1'
     && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1'
     ? new ProductionAutomaticProjectMemory({
-      enabled: () => process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_CAPTURE === '1'
+      enabled: (): boolean => process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_CAPTURE === '1'
         && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1',
-      selectedWorkspace: async () => {
+      selectedWorkspace: async (): Promise<ProductionMemoryWorkspace | null> => {
         const id = settingsRepository.get(selectedWorkspaceSettingKey);
         if (id === null) return null;
         const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
         return selected !== null && selected.id === id
           ? { id: selected.id, realRootPath: selected.realRootPath } : null;
       },
-      goalStatuses: async (id) => (await goalRepository.listWorkspaceGoalsForHost(id, 50))
+      goalStatuses: async (id): Promise<readonly ProductionMemoryGoal[]> => (await goalRepository.listWorkspaceGoalsForHost(id, 50))
         .map((goal) => ({ id: goal.id, status: goal.status, revision: goal.revision })),
     }) : null;
   const syncProductionAutomaticMemory = (): void => {
