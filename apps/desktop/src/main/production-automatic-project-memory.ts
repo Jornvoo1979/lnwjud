@@ -30,6 +30,7 @@ export class ProductionAutomaticProjectMemory {
   private readonly fetcher: typeof fetch;
   private readonly remembered = new Map<string, string>();
   private readonly pending = new Map<string, Promise<void>>();
+  private readonly queued = new Set<string>();
   private closed = false;
 
   constructor(private readonly options: ProductionAutomaticMemoryOptions) {
@@ -38,6 +39,7 @@ export class ProductionAutomaticProjectMemory {
 
   close(): void {
     this.closed = true;
+    this.queued.clear();
     this.remembered.clear();
   }
 
@@ -50,11 +52,26 @@ export class ProductionAutomaticProjectMemory {
       throw new Error('Production automatic memory endpoint unavailable');
     }
     const existing = this.pending.get(workspace.id);
-    if (existing) return existing;
-    const operation = this.performSync(workspace);
+    if (existing) {
+      // A Goal may have changed while an earlier snapshot is being written.
+      // Coalesce concurrent notifications into one trailing refresh.
+      this.queued.add(workspace.id);
+      return existing;
+    }
+    const operation = this.drainSync(workspace);
     this.pending.set(workspace.id, operation);
-    try { await operation; } finally {
-      if (this.pending.get(workspace.id) === operation) this.pending.delete(workspace.id);
+    return operation;
+  }
+
+  private async drainSync(workspace: ProductionMemoryWorkspace): Promise<void> {
+    try {
+      do {
+        this.queued.delete(workspace.id);
+        await this.performSync(workspace);
+      } while (this.queued.has(workspace.id) && await this.stillSelected(workspace));
+    } finally {
+      this.queued.delete(workspace.id);
+      this.pending.delete(workspace.id);
     }
   }
 
@@ -101,7 +118,8 @@ export class ProductionAutomaticProjectMemory {
     if (!await this.stillSelected(workspace)) return;
     const goals = await this.options.goalStatuses(workspace.id);
     if (!await this.stillSelected(workspace)) return;
-    const safe = goals.filter((goal) => GOAL_ID.test(goal.id)
+    // The Host repository returns at most 50 entries; never imply a full-project count.
+    const safe = goals.slice(0, 50).filter((goal) => GOAL_ID.test(goal.id)
       && STATUSES.some((status) => status === goal.status)
       && Number.isSafeInteger(goal.revision) && goal.revision >= 0);
     const counts = STATUSES.map((status) =>
@@ -109,7 +127,8 @@ export class ProductionAutomaticProjectMemory {
     const revisions = [...safe].sort((a, b) => a.id.localeCompare(b.id)).slice(0, 25)
       .map((goal) => goal.id + ':' + goal.status + ':r' + goal.revision).join(',');
     const content = 'Production project lifecycle, workspace ' + workspace.id
-      + '. Goal status counts: ' + counts + '. Tracked goal IDs/status/revisions: ' + revisions;
+      + '. Sampled goal status counts (up to 50 host-listed goals): ' + counts
+      + '. Sampled goal IDs/status/revisions: ' + revisions;
     const fingerprint = createHash('sha256').update(content).digest('hex');
     if (this.remembered.get(workspace.id) === fingerprint) return;
     if (!await this.stillSelected(workspace)) return;
