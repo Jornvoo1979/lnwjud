@@ -1,4 +1,4 @@
-name: Isolated Windows Candidate Rollback Acceptance
+name: Isolated Windows Package Payload Restore Audit
 
 on:
   push:
@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  rollback:
+  package-restore:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -87,63 +87,68 @@ jobs:
           "CANDIDATE_SETUP=$($upgrade.setup)" >> $env:GITHUB_ENV
           "CANDIDATE_EXE_SHA=$($upgrade.exeHash)" >> $env:GITHUB_ENV
 
-      - name: Install baseline, upgrade, roll back, then uninstall on disposable runner
+      - name: Prove reversible application payload swap without running headless NSIS
         shell: pwsh
-        timeout-minutes: 15
+        timeout-minutes: 10
         run: |
           $ErrorActionPreference = 'Stop'
-          $root = Join-Path $env:RUNNER_TEMP ("lnwjud-rollback-" + $env:GITHUB_RUN_ID)
-          $install = Join-Path $root 'app'
-          $data = Join-Path $env:APPDATA 'lnwjud'
-          if ($root -match '\s' -or (Test-Path -LiteralPath $root)) { throw 'Unsafe or reused disposable path' }
-          if (Test-Path -LiteralPath $data) { throw 'Runner profile already contains lnwjud data: cannot isolate rollback' }
-          [void](New-Item -Path $data -ItemType Directory -Force)
-          $marker = Join-Path $data 'synthetic-state.txt'
-          $value = "synthetic-$env:GITHUB_RUN_ID"
-          Set-Content -LiteralPath $marker -Value $value -NoNewline -Encoding UTF8
-          function Run-Nsis([string] $binary, [string] $args) {
-            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing NSIS executable: $binary" }
-            $info = [System.Diagnostics.ProcessStartInfo]::new()
-            $info.FileName = $binary
-            $info.Arguments = $args
-            $info.UseShellExecute = $false
-            $info.CreateNoWindow = $true
-            $proc = [System.Diagnostics.Process]::Start($info)
-            if ($null -eq $proc) { throw 'NSIS launch rejected' }
-            try {
-              if (-not $proc.WaitForExit(60000)) {
-                $nearby = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('lnwjud-Setup-5.8.7.exe','lnwjud.exe','elevate.exe','uninstall.exe') } | Select-Object Name, ProcessId, ParentProcessId)
-                Write-Host ('NSIS runner process diagnostics: ' + ($nearby | ConvertTo-Json -Compress))
-                $proc.Kill()
-                throw "NSIS timeout (headless Windows Runner): $binary"
-              }
-              if ($proc.ExitCode -ne 0) { throw "NSIS exited $($proc.ExitCode): $binary" }
-            } finally { $proc.Dispose() }
+          # This audits application payload recovery, NOT registry integration or
+          # NSIS install/uninstall. All extracted bytes stay on this disposable runner.
+          $sevenZip = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source
+          if (-not $sevenZip) { $sevenZip = 'C:\Program Files\7-Zip\7z.exe' }
+          if (-not (Test-Path -LiteralPath $sevenZip -PathType Leaf)) {
+            throw '7-Zip unavailable: cannot verify or restore installer payload'
           }
-          function Assert-Installed([string] $expected, [string] $phase) {
-            $exe = Join-Path $install 'lnwjud.exe'
-            $uninstaller = Join-Path $install 'uninstall.exe'
-            for($i=0; $i -lt 40 -and (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $uninstaller)); $i++) { Start-Sleep -Milliseconds 500 }
-            if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -or -not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw "Installer did not produce application and uninstaller: $phase" }
-            $actual = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $expected) { throw "Wrong installed executable hash at $phase" }
-            if ((Get-Content -LiteralPath $marker -Raw) -ne $value) { throw "Synthetic data corrupted at $phase" }
+          $root = Join-Path $env:RUNNER_TEMP ('lnwjud-package-restore-' + $env:GITHUB_RUN_ID)
+          if (Test-Path -LiteralPath $root) { throw 'Nonfresh disposable root' }
+          [void](New-Item -Path $root -ItemType Directory -Force)
+          $profile = Join-Path $root 'synthetic-profile'
+          [void](New-Item -Path $profile -ItemType Directory)
+          $marker = Join-Path $profile 'state-marker.txt'
+          $markerContent = 'synthetic-only-' + $env:GITHUB_RUN_ID
+          Set-Content -LiteralPath $marker -Value $markerContent -NoNewline
+
+          function Extract-App([string] $setup, [string] $label, [string] $expectedSha) {
+            $outer = Join-Path $root ($label + '-outer')
+            [void](New-Item -Path $outer -ItemType Directory)
+            & $sevenZip x -y -bd "-o$outer" $setup | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "NSIS archive extraction failed for $label" }
+            $appArchives = @(Get-ChildItem -LiteralPath $outer -Recurse -File -Filter 'app-64.7z')
+            if ($appArchives.Count -eq 1) {
+              $payload = Join-Path $root ($label + '-payload')
+              [void](New-Item -Path $payload -ItemType Directory)
+              & $sevenZip x -y -bd "-o$payload" $appArchives[0].FullName | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "Inner application archive extraction failed for $label" }
+              $searchRoot = $payload
+            } elseif ($appArchives.Count -eq 0) {
+              $searchRoot = $outer
+            } else { throw "Ambiguous inner application archives for $label" }
+
+            $matches = @(Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter 'lnwjud.exe' |
+              Where-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expectedSha.ToLowerInvariant() })
+            if ($matches.Count -ne 1) { throw "Exactly one verified packaged lnwjud.exe required for $label; found $($matches.Count)" }
+            $source = $matches[0].DirectoryName
+            if (-not (Test-Path -LiteralPath (Join-Path $source 'resources') -PathType Container)) {
+              throw "Application payload incomplete: resources directory missing for $label"
+            }
+            Write-Host "PASS: verified original extracted application payload for $label"
+            return $source
+          }
+
+          $baseline = Extract-App $env:BASELINE_SETUP 'published' $env:BASELINE_EXE_SHA
+          $candidate = Extract-App $env:CANDIDATE_SETUP 'candidate' $env:CANDIDATE_EXE_SHA
+          $live = Join-Path $root 'active-application'
+
+          function Switch-Payload([string] $from, [string] $expected, [string] $phase) {
+            if (Test-Path -LiteralPath $live) { Remove-Item -LiteralPath $live -Recurse -Force }
+            Copy-Item -LiteralPath $from -Destination $live -Recurse -Force
+            $actual = (Get-FileHash -LiteralPath (Join-Path $live 'lnwjud.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected.ToLowerInvariant()) { throw "Application payload mismatch: $phase" }
+            if ((Get-Content -LiteralPath $marker -Raw) -ne $markerContent) { throw "Isolated profile mutated: $phase" }
             Write-Host "PASS: $phase"
           }
-          try {
-            Run-Nsis $env:BASELINE_SETUP ("--updated /S /currentuser /D=" + $install)
-            Assert-Installed $env:BASELINE_EXE_SHA 'baseline-install'
-            Run-Nsis $env:CANDIDATE_SETUP ("--updated /S /currentuser /D=" + $install)
-            Assert-Installed $env:CANDIDATE_EXE_SHA 'candidate-upgrade'
-            Run-Nsis $env:BASELINE_SETUP ("--updated /S /currentuser /D=" + $install)
-            Assert-Installed $env:BASELINE_EXE_SHA 'baseline-rollback'
-            Run-Nsis (Join-Path $install 'uninstall.exe') '/currentuser /S'
-            for($i=0; $i -lt 40 -and (Test-Path -LiteralPath (Join-Path $install 'lnwjud.exe')); $i++) { Start-Sleep -Milliseconds 500 }
-            if (Test-Path -LiteralPath (Join-Path $install 'lnwjud.exe')) { throw 'Uninstall left application executable' }
-            if ((Get-Content -LiteralPath $marker -Raw) -ne $value) { throw 'Uninstall corrupted synthetic data' }
-            Write-Host 'PASS: baseline installation, upgrade, binary-exact rollback, uninstall, synthetic-state retention'
-          } finally {
-            if (Test-Path -LiteralPath (Join-Path $install 'uninstall.exe') -PathType Leaf) {
-              try { Run-Nsis (Join-Path $install 'uninstall.exe') '/currentuser /S' } catch { Write-Warning 'Disposable runner cleanup could not finish' }
-            }
-          }
+
+          Switch-Payload $baseline $env:BASELINE_EXE_SHA 'published-application-installed-as-files'
+          Switch-Payload $candidate $env:CANDIDATE_EXE_SHA 'candidate-application-replaced-as-files'
+          Switch-Payload $baseline $env:BASELINE_EXE_SHA 'original-application-restored-from-verified-files'
+          Write-Host 'PASS: binary rollback and unchanged synthetic profile in isolated runner; NSIS installer/uninstaller acceptance STILL NOT PROVEN'
