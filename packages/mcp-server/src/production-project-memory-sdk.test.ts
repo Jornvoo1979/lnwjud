@@ -10,13 +10,13 @@ const actor: FileActor = { clientId: 'production-memory-security-test', clientNa
 const name = 'project_memory_recall';
 const scope = { workspaceId: 'Alpha', rootPath: 'D:/IsolatedAlpha' };
 
-async function connected(options: Parameters<typeof createMcpServer>[0]) {
+async function connected(options: Parameters<typeof createMcpServer>[0]): Promise<{ client: Client; close: () => Promise<void> }> {
   const server = createMcpServer(options);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'production-memory-test', version: '1.0.0' });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
-  return { client, close: async () => { await client.close(); await server.close(); } };
+  return { client, close: async (): Promise<void> => { await client.close(); await server.close(); } };
 }
 
 describe('Optional Production MCP tool Host authorization and audit boundary', () => {
@@ -63,7 +63,7 @@ describe('Optional Production MCP tool Host authorization and audit boundary', (
 
   it('records allowed and failed calls without persisting raw query or backend response', async () => {
     const events: ActivitySinkEvent[] = [];
-    const tracker = new ActivityTracker({ record: async event => { events.push(event); } });
+    const tracker = new ActivityTracker({ record: async (event): Promise<void> => { events.push(event); } });
     const run = vi.fn(async () => ({ results: [{ content: 'synthetic-only fixture memory' }] }));
     const f = await connected({
       actor, services: {} as McpApplicationServices, productionProjectMemoryRecall: run, hostMutationApprovalProvider: async () => true,
