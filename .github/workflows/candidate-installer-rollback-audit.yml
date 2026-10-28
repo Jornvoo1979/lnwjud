@@ -94,8 +94,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $root = Join-Path $env:RUNNER_TEMP ("lnwjud-rollback-" + $env:GITHUB_RUN_ID)
           $install = Join-Path $root 'app'
-          $data = Join-Path $root 'synthetic-user-data'
+          $data = Join-Path $env:APPDATA 'lnwjud'
           if ($root -match '\s' -or (Test-Path -LiteralPath $root)) { throw 'Unsafe or reused disposable path' }
+          if (Test-Path -LiteralPath $data) { throw 'Runner profile already contains lnwjud data: cannot isolate rollback' }
           [void](New-Item -Path $data -ItemType Directory -Force)
           $marker = Join-Path $data 'synthetic-state.txt'
           $value = "synthetic-$env:GITHUB_RUN_ID"
@@ -110,7 +111,12 @@ jobs:
             $proc = [System.Diagnostics.Process]::Start($info)
             if ($null -eq $proc) { throw 'NSIS launch rejected' }
             try {
-              if (-not $proc.WaitForExit(180000)) { $proc.Kill(); throw "NSIS timeout: $binary" }
+              if (-not $proc.WaitForExit(60000)) {
+                $nearby = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('lnwjud-Setup-5.8.7.exe','lnwjud.exe','elevate.exe','uninstall.exe') } | Select-Object Name, ProcessId, ParentProcessId)
+                Write-Host ('NSIS runner process diagnostics: ' + ($nearby | ConvertTo-Json -Compress))
+                $proc.Kill()
+                throw "NSIS timeout (headless Windows Runner): $binary"
+              }
               if ($proc.ExitCode -ne 0) { throw "NSIS exited $($proc.ExitCode): $binary" }
             } finally { $proc.Dispose() }
           }
@@ -125,11 +131,11 @@ jobs:
             Write-Host "PASS: $phase"
           }
           try {
-            Run-Nsis $env:BASELINE_SETUP ("/S /currentuser /D=" + $install)
+            Run-Nsis $env:BASELINE_SETUP ("--updated /S /currentuser /D=" + $install)
             Assert-Installed $env:BASELINE_EXE_SHA 'baseline-install'
-            Run-Nsis $env:CANDIDATE_SETUP ("/S /currentuser /D=" + $install)
+            Run-Nsis $env:CANDIDATE_SETUP ("--updated /S /currentuser /D=" + $install)
             Assert-Installed $env:CANDIDATE_EXE_SHA 'candidate-upgrade'
-            Run-Nsis $env:BASELINE_SETUP ("/S /currentuser /D=" + $install)
+            Run-Nsis $env:BASELINE_SETUP ("--updated /S /currentuser /D=" + $install)
             Assert-Installed $env:BASELINE_EXE_SHA 'baseline-rollback'
             Run-Nsis (Join-Path $install 'uninstall.exe') '/currentuser /S'
             for($i=0; $i -lt 40 -and (Test-Path -LiteralPath (Join-Path $install 'lnwjud.exe')); $i++) { Start-Sleep -Milliseconds 500 }
