@@ -1,0 +1,241 @@
+name: Isolated Windows Package Payload Restore Audit
+
+on:
+  push:
+    branches:
+      - feature/project-memory-production-dev-v587-20261027
+    paths:
+      - .github/workflows/candidate-installer-rollback-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: isolated-rollback-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package-restore:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download and verify published official v5.8.7 setup and evidence
+        shell: pwsh
+        timeout-minutes: 8
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'rollback-baseline'
+          [void](New-Item -Path $dir -ItemType Directory -Force)
+          $assets = @(
+            @('lnwjud-Setup-5.8.7.exe','8bfe85fd964065b6f32ff82755bc77c92f4f1878a0d21abc2f35d2f7993af0b1'),
+            @('PROVENANCE-win32-x64.json','3afcd078e20ac32f249347d411b8449a1dc784eaa3d79b1e9035cc0c05bf7566'),
+            @('SHA256SUMS-win32-x64.txt','60e8f9793205de1806cbfb34b5843ddf97bbb725df3fc5f4ba48db92af9d236a')
+          )
+          foreach ($item in $assets) {
+            $name = $item[0]
+            $target = Join-Path $dir $name
+            $url = 'https://github.com/engasnm111/lnwjud/releases/download/v5.8.7/' + $name
+            & curl.exe --fail --location --retry 2 --silent --show-error --output $target $url
+            if ($LASTEXITCODE -ne 0) { throw "Official release download failed: $name" }
+            $digest = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($digest -ne $item[1]) { throw "Published v5.8.7 GitHub release digest mismatch: $name" }
+          }
+          Write-Host 'PASS: independently pinned upstream v5.8.7 release downloads'
+
+      - name: Download verified upgraded candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-windows-installer-46caf60699c1750e8ce0a0479f7ac8cdff09a82b
+          run-id: 40697943722
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/rollback-upgrade
+
+      - name: Verify identities and SHA-256 for both downloaded installers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Verify-Evidence([string] $folder, [string] $sha, [bool] $publishedBaseline = $false) {
+            $files = @(Get-ChildItem -LiteralPath $folder -File -Recurse -Filter $(if ($publishedBaseline) { 'PROVENANCE-win32-x64.json' } else { 'PROVENANCE.json' }))
+            if ($files.Count -ne 1) { throw "Expected one PROVENANCE.json in $folder" }
+            $dir = $files[0].DirectoryName
+            $p = Get-Content -LiteralPath $files[0].FullName -Raw | ConvertFrom-Json
+            if ($p.product -ne 'lnwjud' -or $p.version -ne '5.8.7' -or $p.platform -ne 'win32' -or $p.arch -ne 'x64' -or $p.source.commit -ne $sha -or $p.source.dirty -ne $false) { throw "Wrong or dirty source in $folder" }
+            $lines = @(Get-Content -LiteralPath (Join-Path $dir $(if ($publishedBaseline) { 'SHA256SUMS-win32-x64.txt' } else { 'SHA256SUMS.txt' })))
+            $provenanceHash = (Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if (-not ($lines -ccontains "$provenanceHash  $(if ($publishedBaseline) { 'PROVENANCE-win32-x64.json' } else { 'PROVENANCE.json' })")) { throw 'Provenance hash mismatch' }
+            foreach ($a in $p.artifacts) {
+              $filename = Join-Path $dir ([string] $a.name)
+              if (-not (Test-Path -LiteralPath $filename -PathType Leaf)) {
+                if ($publishedBaseline -and $a.name -ne 'lnwjud-Setup-5.8.7.exe') { continue }
+                throw "Missing $($a.name)"
+              }
+              $hash = (Get-FileHash -LiteralPath $filename -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($hash -ne ([string] $a.sha256).ToLowerInvariant() -or -not ($lines -ccontains "$hash  $($a.name)")) { throw "Artifact hash mismatch: $($a.name)" }
+            }
+            $runtime = @($p.runtime | Where-Object { $_.relativePath -eq 'lnwjud.exe' })
+            if ($runtime.Count -ne 1) { throw 'Missing installed executable provenance' }
+            Write-Host "PASS: artifact hashes and clean source $sha"
+            return @{ setup = (Join-Path $dir 'lnwjud-Setup-5.8.7.exe'); exeHash = ([string] $runtime[0].sha256).ToLowerInvariant() }
+          }
+          $base = Verify-Evidence (Join-Path $env:RUNNER_TEMP 'rollback-baseline') '1a0453ed0ef1de4cdf9ce1ba9edee8da0de8426b' $true
+          $upgrade = Verify-Evidence (Join-Path $env:RUNNER_TEMP 'rollback-upgrade') '46caf60699c1750e8ce0a0479f7ac8cdff09a82b'
+          if ($base.exeHash -eq $upgrade.exeHash) { throw 'Published baseline and feature candidate are identical: downgrade rehearsal is invalid' }
+          "BASELINE_SETUP=$($base.setup)" >> $env:GITHUB_ENV
+          "BASELINE_EXE_SHA=$($base.exeHash)" >> $env:GITHUB_ENV
+          "CANDIDATE_SETUP=$($upgrade.setup)" >> $env:GITHUB_ENV
+          "CANDIDATE_EXE_SHA=$($upgrade.exeHash)" >> $env:GITHUB_ENV
+
+      - name: Prove reversible application payload swap without running headless NSIS
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # This audits application payload recovery, NOT registry integration or
+          # NSIS install/uninstall. All extracted bytes stay on this disposable runner.
+          $sevenZip = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source
+          if (-not $sevenZip) { $sevenZip = 'C:\Program Files\7-Zip\7z.exe' }
+          if (-not (Test-Path -LiteralPath $sevenZip -PathType Leaf)) {
+            throw '7-Zip unavailable: cannot verify or restore installer payload'
+          }
+          $root = Join-Path $env:RUNNER_TEMP ('lnwjud-package-restore-' + $env:GITHUB_RUN_ID)
+          if (Test-Path -LiteralPath $root) { throw 'Nonfresh disposable root' }
+          [void](New-Item -Path $root -ItemType Directory -Force)
+          $profile = Join-Path $root 'synthetic-profile'
+          [void](New-Item -Path $profile -ItemType Directory)
+          $marker = Join-Path $profile 'state-marker.txt'
+          $markerContent = 'synthetic-only-' + $env:GITHUB_RUN_ID
+          Set-Content -LiteralPath $marker -Value $markerContent -NoNewline
+
+          function Extract-App([string] $setup, [string] $label, [string] $expectedSha) {
+            $outer = Join-Path $root ($label + '-outer')
+            [void](New-Item -Path $outer -ItemType Directory)
+            & $sevenZip x -y -bd "-o$outer" $setup | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "NSIS archive extraction failed for $label" }
+            $appArchives = @(Get-ChildItem -LiteralPath $outer -Recurse -File -Filter 'app-64.7z')
+            if ($appArchives.Count -eq 1) {
+              $payload = Join-Path $root ($label + '-payload')
+              [void](New-Item -Path $payload -ItemType Directory)
+              & $sevenZip x -y -bd "-o$payload" $appArchives[0].FullName | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "Inner application archive extraction failed for $label" }
+              $searchRoot = $payload
+            } elseif ($appArchives.Count -eq 0) {
+              $searchRoot = $outer
+            } else { throw "Ambiguous inner application archives for $label" }
+
+            $matches = @(Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter 'lnwjud.exe' |
+              Where-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expectedSha.ToLowerInvariant() })
+            if ($matches.Count -ne 1) { throw "Exactly one verified packaged lnwjud.exe required for $label; found $($matches.Count)" }
+            $source = $matches[0].DirectoryName
+            if (-not (Test-Path -LiteralPath (Join-Path $source 'resources') -PathType Container)) {
+              throw "Application payload incomplete: resources directory missing for $label"
+            }
+            Write-Host "PASS: verified original extracted application payload for $label"
+            return $source
+          }
+
+          $baseline = Extract-App $env:BASELINE_SETUP 'published' $env:BASELINE_EXE_SHA
+          $candidate = Extract-App $env:CANDIDATE_SETUP 'candidate' $env:CANDIDATE_EXE_SHA
+          $live = Join-Path $root 'active-application'
+
+          function Switch-Payload([string] $from, [string] $expected, [string] $phase) {
+            if (Test-Path -LiteralPath $live) { Remove-Item -LiteralPath $live -Recurse -Force }
+            Copy-Item -LiteralPath $from -Destination $live -Recurse -Force
+            $actual = (Get-FileHash -LiteralPath (Join-Path $live 'lnwjud.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected.ToLowerInvariant()) { throw "Application payload mismatch: $phase" }
+            if ((Get-Content -LiteralPath $marker -Raw) -ne $markerContent) { throw "Isolated profile mutated: $phase" }
+            Write-Host "PASS: $phase"
+          }
+
+          Switch-Payload $baseline $env:BASELINE_EXE_SHA 'published-application-installed-as-files'
+          Switch-Payload $candidate $env:CANDIDATE_EXE_SHA 'candidate-application-replaced-as-files'
+          Switch-Payload $baseline $env:BASELINE_EXE_SHA 'original-application-restored-from-verified-files'
+          Write-Host 'PASS: binary rollback and unchanged synthetic profile in isolated runner; NSIS installer/uninstaller acceptance STILL NOT PROVEN'
+
+      - name: Rehearse real NSIS install upgrade uninstall and baseline recovery on disposable Windows runner
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # GitHub-hosted ephemeral Windows runner ONLY. This must never run on the user's computer.
+          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or
+              $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
+            throw 'DISPOSABLE_GITHUB_HOSTED_RUNNER_REQUIRED'
+          }
+          $install = Join-Path $env:LOCALAPPDATA 'Programs\lnwjud'
+          $roam = Join-Path $env:APPDATA 'lnwjud'
+          $local = Join-Path $env:LOCALAPPDATA 'lnwjud'
+          $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\lnwjud.lnk'
+          $uninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+          function Get-LnwjudRegistration {
+            return @(Get-ChildItem -LiteralPath $uninstallRoot -ErrorAction SilentlyContinue |
+              ForEach-Object { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue } |
+              Where-Object { $_.DisplayName -match '^lnwjud(\s|$)' })
+          }
+          if ((Test-Path -LiteralPath $install) -or (Test-Path -LiteralPath $roam) -or
+              (Test-Path -LiteralPath $local) -or (Test-Path -LiteralPath $shortcut) -or
+              (Get-LnwjudRegistration).Count -gt 0 -or
+              @(Get-Process -Name lnwjud -ErrorAction SilentlyContinue).Count -gt 0) {
+            throw 'RUNNER_NOT_CLEAN_ABORT'
+          }
+          function Assert-Install([string]$expectedHash, [string]$phase) {
+            $exe = Join-Path $install 'lnwjud.exe'
+            $uninstaller = Join-Path $install 'uninstall.exe'
+            if (!(Test-Path -LiteralPath $exe -PathType Leaf) -or
+                !(Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+              throw "MISSING_INSTALL_FILES: $phase"
+            }
+            $actual = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expectedHash) { throw "EXECUTABLE_HASH_MISMATCH: $phase" }
+            $regs = @(Get-LnwjudRegistration)
+            if ($regs.Count -ne 1 -or
+                -not ([string]$regs[0].UninstallString).Contains($uninstaller)) {
+              throw "UNINSTALL_REGISTRY_MISMATCH: $phase"
+            }
+            if (!(Test-Path -LiteralPath $shortcut -PathType Leaf)) {
+              throw "START_MENU_SHORTCUT_MISSING: $phase"
+            }
+            $target = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath
+            if ($target -ne $exe) { throw "SHORTCUT_TARGET_MISMATCH: $phase" }
+            Write-Host "PASS: $phase executable/registry/shortcut"
+          }
+          function Install-Setup([string]$file, [string]$phase) {
+            $p = Start-Process -FilePath $file -ArgumentList @('/S','/currentuser') -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "NSIS_INSTALL_FAILED: $phase exit=$($p.ExitCode)" }
+          }
+          function Assert-UserData {
+            foreach ($item in @($roamMarker, $localMarker)) {
+              if (!(Test-Path -LiteralPath $item -PathType Leaf) -or
+                  (Get-Content -LiteralPath $item -Raw) -ne $marker) {
+                throw "USER_DATA_NOT_PRESERVED: $item"
+              }
+            }
+            Write-Host 'PASS: synthetic user data unchanged'
+          }
+          # Baseline -> candidate -> candidate silent uninstall -> baseline reinstall.
+          Install-Setup $env:BASELINE_SETUP 'baseline'
+          Assert-Install $env:BASELINE_EXE_SHA 'published baseline installed'
+          $marker = 'synthetic-recovery-' + $env:GITHUB_RUN_ID
+          [void](New-Item -ItemType Directory -Force -Path $roam, $local)
+          $roamMarker = Join-Path $roam 'rollback-test-workspace.txt'
+          $localMarker = Join-Path $local 'rollback-test-settings.txt'
+          Set-Content -LiteralPath $roamMarker -Value $marker -NoNewline
+          Set-Content -LiteralPath $localMarker -Value $marker -NoNewline
+          Install-Setup $env:CANDIDATE_SETUP 'candidate upgrade'
+          Assert-Install $env:CANDIDATE_EXE_SHA 'candidate upgraded'
+          Assert-UserData
+          $uninstaller = Join-Path $install 'uninstall.exe'
+          $p = Start-Process -FilePath $uninstaller -ArgumentList @('/S','/currentuser') -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "NSIS_UNINSTALL_FAILED: $($p.ExitCode)" }
+          Assert-UserData
+          if ((Test-Path -LiteralPath (Join-Path $install 'lnwjud.exe')) -or
+              @(Get-LnwjudRegistration).Count -gt 0 -or
+              (Test-Path -LiteralPath $shortcut)) {
+            throw 'UNINSTALL_REGISTRATION_OR_PAYLOAD_LEFTOVER'
+          }
+          Install-Setup $env:BASELINE_SETUP 'baseline restore'
+          Assert-Install $env:BASELINE_EXE_SHA 'original version restored'
+          Assert-UserData
+          Write-Host 'PASS: isolated real NSIS install/upgrade/uninstall/reinstall rollback with preserved synthetic profile'
+          Write-Host 'SCOPE: disposable hosted runner, not Windows 10 Production; real user profile/SQLite/Hindsight data were not modified'

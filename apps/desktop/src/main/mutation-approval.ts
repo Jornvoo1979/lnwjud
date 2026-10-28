@@ -31,6 +31,7 @@ export function mutationApprovalDialogOptions(
   if (!trustedHostWindowAvailable) throw new Error('Trusted host window is unavailable for mutation approval');
 
   const thai = locale === 'th';
+  const memoryRead = request.toolName === 'project_memory_recall' && request.mutationKind === 'read';
   const workspace = request.workspaceRoot ?? (thai ? 'ไม่มี Active Project' : 'No Active Project');
   const workspaceId = request.workspaceId ?? '-';
   const detail = thai
@@ -41,10 +42,10 @@ export function mutationApprovalDialogOptions(
         `ประเภท: ${request.mutationKind}`,
         `เหตุผล: ${request.reason}`,
         '',
-        'คำสั่งหรือเป้าหมายที่จะใช้จริง:',
+        memoryRead ? 'คำค้นหาความจำโปรเจกต์ที่จะอ่านจริง:' : 'คำสั่งหรือเป้าหมายที่จะใช้จริง:',
         request.summary,
         '',
-        'ตรวจสอบ path และ arguments ให้ครบก่อนอนุญาต การอนุญาตนี้ใช้ได้ครั้งเดียวเท่านั้น',
+        memoryRead ? 'ตรวจสอบโปรเจกต์และคำค้นหาให้ถูกต้อง การอนุญาตนี้ใช้ได้ครั้งเดียวเท่านั้น' : 'ตรวจสอบ path และ arguments ให้ครบก่อนอนุญาต การอนุญาตนี้ใช้ได้ครั้งเดียวเท่านั้น',
       ].join('\n')
     : [
         `Project: ${workspace}`,
@@ -53,17 +54,19 @@ export function mutationApprovalDialogOptions(
         `Mutation: ${request.mutationKind}`,
         `Reason: ${request.reason}`,
         '',
-        'Exact command or target:',
+        memoryRead ? 'Exact project-memory query:' : 'Exact command or target:',
         request.summary,
         '',
-        'Verify every path and argument before approving. This approval is valid once only.',
+        memoryRead ? 'Verify the project and exact query before approving. This approval is valid once only.' : 'Verify every path and argument before approving. This approval is valid once only.',
       ].join('\n');
   return {
     type: 'warning',
     title: thai ? 'ยืนยันคำสั่งที่มีความเสี่ยง' : 'Confirm high-risk action',
-    message: thai
-      ? 'lnwjud กำลังจะรันคำสั่งที่อาจลบหรือแทนที่ข้อมูล'
-      : 'lnwjud is about to run an action that may delete or replace data',
+    message: memoryRead
+      ? (thai ? 'ยืนยันการอ่านความจำของโปรเจกต์สำหรับคำขอนี้เพียงครั้งเดียว' : 'Allow one read of local project memory for this request?')
+      : thai
+        ? 'lnwjud กำลังจะรันคำสั่งที่อาจลบหรือแทนที่ข้อมูล'
+        : 'lnwjud is about to run an action that may delete or replace data',
     detail,
     buttons: thai ? ['ยกเลิก', 'อนุญาตครั้งนี้'] : ['Cancel', 'Approve once'],
     defaultId: 0,

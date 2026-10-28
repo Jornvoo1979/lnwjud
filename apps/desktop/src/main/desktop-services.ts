@@ -61,6 +61,8 @@ import {
   createEngineeringArtifactVerifier,
   createEngineeringSourceStateProvider,
   RuntimeGoalManagedTaskStateReader,
+  createProductionSingleUserMemoryRecall,
+  recallProductionHindsight,
   createFileActivitySink,
   mcpActivityLogPath,
   type ActivitySinkEvent,
@@ -230,6 +232,7 @@ import { readNativeCrashDumpMetadata } from './native-crash-diagnostics.js';
 import { readRuntimeDiagnosticsHistory } from './runtime-diagnostics-history.js';
 import { createRetryableShutdown } from './desktop-shutdown.js';
 import { DesktopMcpLifecycle } from './mcp-lifecycle.js';
+import { ProductionAutomaticProjectMemory, type ProductionMemoryGoal, type ProductionMemoryWorkspace } from './production-automatic-project-memory.js';
 import { WorkLogViewState } from './work-log-view-state.js';
 import { installPdfProvider, type InstalledPdfProvider } from './pdf-provider-installer.js';
 import { RemoteMcpController } from './remote-mcp-controller.js';
@@ -287,6 +290,7 @@ export interface DesktopRuntime {
 export interface DesktopRuntimeOptions {
   readonly permissionProfile?: PermissionProfileName;
   readonly hostMutationApprovalProvider?: (request: HostMutationApprovalRequest) => boolean | Promise<boolean>;
+  readonly productionProjectMemoryRecall?: boolean;
   readonly pdfProviderInstaller?: (dataPath: string) => Promise<InstalledPdfProvider>;
   readonly onInstallActivity?: (kind: 'ngrok' | 'pdf_provider', update: { readonly phase: InstallOperationPhase; readonly progressPercent: number | null; readonly message: string | null } | null) => void;
   readonly checkpointEncryptionKey?: Buffer;
@@ -844,6 +848,55 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
   // One transport-owned ledger is shared across Modern HTTP requests and the
   // Desktop read-only diagnostics view. It is not a per-Goal counter.
   const desktopContextEconomy = new ContextEconomyRuntime();
+  // Packaged Windows Production opt-in only; Host selects project, not the MCP caller.
+  const productionAutomaticMemory = process.platform === 'win32'
+    && options.productionProjectMemoryRecall === true
+    && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_CAPTURE === '1'
+    && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1'
+    ? new ProductionAutomaticProjectMemory({
+      enabled: (): boolean => process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_CAPTURE === '1'
+        && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1',
+      selectedWorkspace: async (): Promise<ProductionMemoryWorkspace | null> => {
+        const id = settingsRepository.get(selectedWorkspaceSettingKey);
+        if (id === null) return null;
+        const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
+        return selected !== null && selected.id === id
+          ? { id: selected.id, realRootPath: selected.realRootPath } : null;
+      },
+      goalStatuses: async (id): Promise<readonly ProductionMemoryGoal[]> => (await goalRepository.listWorkspaceGoalsForHost(id, 50))
+        .map((goal) => ({ id: goal.id, status: goal.status, revision: goal.revision })),
+    }) : null;
+  const syncProductionAutomaticMemory = (): void => {
+    if (productionAutomaticMemory === null) return;
+    void productionAutomaticMemory.syncSelected().catch((error: unknown) => console.warn(
+      '[ProductionAutomaticMemory] Sync unavailable: '
+      + (error instanceof Error ? error.message : 'unknown error')));
+  };
+  if (productionAutomaticMemory !== null) activityTracker.subscribe((event) => {
+    if (event.phase === 'completed' && event.resultCode === 'SUCCESS'
+      && /^(?:run_goal|checkpoint_goal|finish_goal|cancel_goal)$/.test(event.toolName)) {
+      syncProductionAutomaticMemory();
+    }
+  });
+  const productionProjectMemoryRecall = process.platform === 'win32'
+    && options.productionProjectMemoryRecall === true
+    && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1'
+    && options.hostMutationApprovalProvider !== undefined
+    ? createProductionSingleUserMemoryRecall({
+      enabled: () => process.platform === 'win32'
+        && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1',
+      getSelectedWorkspace: async () => {
+        const selectedId = settingsRepository.get(selectedWorkspaceSettingKey);
+        if (selectedId === null) return null;
+        const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
+        if (selected === null || selected.id !== selectedId) return null;
+        return { workspaceId: selected.id, projectId: selected.id,
+          rootPath: selected.realRootPath, approved: true as const };
+      },
+      nativeApproval: options.hostMutationApprovalProvider,
+      recallBank: recallProductionHindsight,
+    })
+    : undefined;
   const mcpLifecycle = new DesktopMcpLifecycle({
     createServerOptions: (): McpHttpServerOptions => ({
       contextEconomy: desktopContextEconomy,
@@ -864,6 +917,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
         (await resolveActiveProjectWorkspaces()).map((workspace) => ({ workspaceId: workspace.id, rootPath: workspace.realRootPath }))
       ),
       ...(options.hostMutationApprovalProvider === undefined ? {} : { hostMutationApprovalProvider: options.hostMutationApprovalProvider }),
+      ...(productionProjectMemoryRecall === undefined ? {} : { productionProjectMemoryRecall }),
       codexToolsEnabledProvider: () => readSettings().codexToolsEnabled,
       ponytailModeProvider: () => readSettings().ponytailMode,
       engineeringHarnessEnabledProvider: (): boolean => {
@@ -1576,6 +1630,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     await activateWorkspace(workspaceId);
     settingsRepository.set(selectedWorkspaceSettingKey, workspaceId);
     await resolveActiveProjectWorkspaces();
+    syncProductionAutomaticMemory();
     return toWorkspaceSummary(workspace);
   }
 
@@ -1594,6 +1649,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
         if (existing.archivedAt !== undefined && existing.archivedAt !== null) await workspaceRepository.restore(existing.id);
         settingsRepository.set(selectedWorkspaceSettingKey, existing.id);
         await activateWorkspace(existing.id);
+        syncProductionAutomaticMemory();
         if (!mcpLifecycle.status().running) await mcpLifecycle.start();
         const restored = await workspaceRepository.getAny(existing.id);
         if (restored === null) throw new Error('Workspace could not be restored');
@@ -1603,6 +1659,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
       const workspace = unwrap(await workspaceService.add(displayName, request.rootPath), 'Workspace could not be added');
       settingsRepository.set(selectedWorkspaceSettingKey, workspace.id);
       await activateWorkspace(workspace.id);
+      syncProductionAutomaticMemory();
       if (!mcpLifecycle.status().running) {
         await mcpLifecycle.start();
       }
@@ -2256,6 +2313,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     // before tearing down unrelated runtime services so a failed verification
     // leaves the still-open Desktop usable for a retry.
     await tunnelController.shutdownForDesktopExit();
+    productionAutomaticMemory?.close();
     stopToolAvailabilityWatch();
     await remoteMcpController.close();
     if (watcherHandle !== null) {
@@ -2334,6 +2392,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
           : matched.id;
         settingsRepository.set(selectedWorkspaceSettingKey, workspaceId);
         await activateWorkspace(workspaceId);
+        syncProductionAutomaticMemory();
         return mcpLifecycle.start();
       }
       const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
@@ -2343,6 +2402,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
         return mcpLifecycle.start();
       }
       await activateWorkspace(selected.id);
+      syncProductionAutomaticMemory();
       return mcpLifecycle.start();
     },
     autoStartWatcher: (): Promise<string | null> => startWatcher(),
