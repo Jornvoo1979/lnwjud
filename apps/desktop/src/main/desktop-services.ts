@@ -232,6 +232,7 @@ import { readNativeCrashDumpMetadata } from './native-crash-diagnostics.js';
 import { readRuntimeDiagnosticsHistory } from './runtime-diagnostics-history.js';
 import { createRetryableShutdown } from './desktop-shutdown.js';
 import { DesktopMcpLifecycle } from './mcp-lifecycle.js';
+import { ProductionAutomaticProjectMemory } from './production-automatic-project-memory.js';
 import { WorkLogViewState } from './work-log-view-state.js';
 import { installPdfProvider, type InstalledPdfProvider } from './pdf-provider-installer.js';
 import { RemoteMcpController } from './remote-mcp-controller.js';
@@ -848,6 +849,35 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
   // Desktop read-only diagnostics view. It is not a per-Goal counter.
   const desktopContextEconomy = new ContextEconomyRuntime();
   // Packaged Windows Production opt-in only; Host selects project, not the MCP caller.
+  const productionAutomaticMemory = process.platform === 'win32'
+    && options.productionProjectMemoryRecall === true
+    && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_CAPTURE === '1'
+    && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1'
+    ? new ProductionAutomaticProjectMemory({
+      enabled: () => process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_CAPTURE === '1'
+        && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1',
+      selectedWorkspace: async () => {
+        const id = settingsRepository.get(selectedWorkspaceSettingKey);
+        if (id === null) return null;
+        const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
+        return selected !== null && selected.id === id
+          ? { id: selected.id, realRootPath: selected.realRootPath } : null;
+      },
+      goalStatuses: async (id) => (await goalRepository.listWorkspaceGoalsForHost(id, 50))
+        .map((goal) => ({ id: goal.id, status: goal.status, revision: goal.revision })),
+    }) : null;
+  const syncProductionAutomaticMemory = (): void => {
+    if (productionAutomaticMemory === null) return;
+    void productionAutomaticMemory.syncSelected().catch((error: unknown) => console.warn(
+      '[ProductionAutomaticMemory] Sync unavailable: '
+      + (error instanceof Error ? error.message : 'unknown error')));
+  };
+  if (productionAutomaticMemory !== null) activityTracker.subscribe((event) => {
+    if (event.phase === 'completed' && event.resultCode === 'SUCCESS'
+      && /^(?:run_goal|checkpoint_goal|finish_goal|cancel_goal)$/.test(event.toolName)) {
+      syncProductionAutomaticMemory();
+    }
+  });
   const productionProjectMemoryRecall = process.platform === 'win32'
     && options.productionProjectMemoryRecall === true
     && process.env.LNWJUD_PRODUCTION_PROJECT_MEMORY_READ === '1'
@@ -1600,6 +1630,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     await activateWorkspace(workspaceId);
     settingsRepository.set(selectedWorkspaceSettingKey, workspaceId);
     await resolveActiveProjectWorkspaces();
+    syncProductionAutomaticMemory();
     return toWorkspaceSummary(workspace);
   }
 
@@ -2280,6 +2311,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     // before tearing down unrelated runtime services so a failed verification
     // leaves the still-open Desktop usable for a retry.
     await tunnelController.shutdownForDesktopExit();
+    productionAutomaticMemory?.close();
     stopToolAvailabilityWatch();
     await remoteMcpController.close();
     if (watcherHandle !== null) {
@@ -2358,6 +2390,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
           : matched.id;
         settingsRepository.set(selectedWorkspaceSettingKey, workspaceId);
         await activateWorkspace(workspaceId);
+        syncProductionAutomaticMemory();
         return mcpLifecycle.start();
       }
       const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
