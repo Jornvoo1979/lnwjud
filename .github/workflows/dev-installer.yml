@@ -72,6 +72,14 @@ jobs:
           PLAYWRIGHT_HTML_OPEN: never
         run: pnpm --filter @lnwjud/desktop exec playwright test --config playwright.config.ts desktop-dashboard.e2e.ts desktop-mcp-client.e2e.ts tools-doctor.e2e.ts electron-security.e2e.ts --trace=retain-on-failure --reporter=list,html
 
+      - name: Verify packaged Production memory consent against isolated synthetic backend
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          LNWJUD_PACKAGED_EXECUTABLE: ${{ github.workspace }}/apps/desktop/dist/installers/win-unpacked/lnwjud.exe
+          PLAYWRIGHT_HTML_OPEN: never
+        run: pnpm --filter @lnwjud/desktop exec playwright test --config playwright.config.ts production-project-memory.e2e.ts --trace=retain-on-failure --reporter=list,html
+
       - name: Upload Windows packaged E2E diagnostics
         if: always()
         uses: actions/upload-artifact@v7
