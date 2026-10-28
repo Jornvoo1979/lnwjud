@@ -77,9 +77,13 @@ describe('Production project memory fail-closed boundary', () => {
 
   it('uses only localhost Production backend for a valid bank and never staging', async () => {
     vi.stubEnv('LNWJUD_PRODUCTION_HINDSIGHT_URL', 'http://127.0.0.1:8888');
-    const network = vi.fn(async (_url: URL) => ({
-      ok: true, json: async () => ({ results: [{ text: 'synthetic', id: 'test' }] }),
-    }));
+    const network = vi.fn(async (url: URL) => {
+      expect(url.protocol).toBe('http:');
+      return {
+        ok: true,
+        json: async (): Promise<{ results: { text: string; id: string }[] }> => ({ results: [{ text: 'synthetic', id: 'test' }] }),
+      };
+    });
     vi.stubGlobal('fetch', network);
     const result = await recallProductionHindsight(bank, 'synthetic', 1);
     expect(result).toEqual([{ content: 'synthetic', ref: 'test' }]);
