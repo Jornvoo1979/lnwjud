@@ -64,7 +64,7 @@ jobs:
             if ($p.product -ne 'lnwjud' -or $p.version -ne '5.8.7' -or $p.platform -ne 'win32' -or $p.arch -ne 'x64' -or $p.source.commit -ne $sha -or $p.source.dirty -ne $false) { throw "Wrong or dirty source in $folder" }
             $lines = @(Get-Content -LiteralPath (Join-Path $dir $(if ($publishedBaseline) { 'SHA256SUMS-win32-x64.txt' } else { 'SHA256SUMS.txt' })))
             $provenanceHash = (Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            if (-not ($lines -ccontains "$provenanceHash  PROVENANCE.json")) { throw 'Provenance hash mismatch' }
+            if (-not ($lines -ccontains "$provenanceHash  $(if ($publishedBaseline) { 'PROVENANCE-win32-x64.json' } else { 'PROVENANCE.json' })")) { throw 'Provenance hash mismatch' }
             foreach ($a in $p.artifacts) {
               $filename = Join-Path $dir ([string] $a.name)
               if (-not (Test-Path -LiteralPath $filename -PathType Leaf)) {
