@@ -21,13 +21,28 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - name: Download verified baseline candidate
-        uses: actions/download-artifact@v4
-        with:
-          name: dev-windows-installer-ef9fda9b40166107e511cf7da2baa0087a32256e
-          run-id: 40628391944
-          github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/rollback-baseline
+      - name: Download and verify published official v5.8.7 setup and evidence
+        shell: pwsh
+        timeout-minutes: 8
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'rollback-baseline'
+          [void](New-Item -Path $dir -ItemType Directory -Force)
+          $assets = @(
+            @('lnwjud-Setup-5.8.7.exe','8bfe85fd964065b6f32ff82755bc77c92f4f1878a0d21abc2f35d2f7993af0b1'),
+            @('PROVENANCE-win32-x64.json','3afcd078e20ac32f249347d411b8449a1dc784eaa3d79b1e9035cc0c05bf7566'),
+            @('SHA256SUMS-win32-x64.txt','60e8f9793205de1806cbfb34b5843ddf97bbb725df3fc5f4ba48db92af9d236a')
+          )
+          foreach ($item in $assets) {
+            $name = $item[0]
+            $target = Join-Path $dir $name
+            $url = 'https://github.com/engasnm111/lnwjud/releases/download/v5.8.7/' + $name
+            & curl.exe --fail --location --retry 2 --silent --show-error --output $target $url
+            if ($LASTEXITCODE -ne 0) { throw "Official release download failed: $name" }
+            $digest = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($digest -ne $item[1]) { throw "Published v5.8.7 GitHub release digest mismatch: $name" }
+          }
+          Write-Host 'PASS: independently pinned upstream v5.8.7 release downloads'
 
       - name: Download verified upgraded candidate
         uses: actions/download-artifact@v4
@@ -41,18 +56,21 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          function Verify-Evidence([string] $folder, [string] $sha) {
-            $files = @(Get-ChildItem -LiteralPath $folder -File -Recurse -Filter PROVENANCE.json)
+          function Verify-Evidence([string] $folder, [string] $sha, [bool] $publishedBaseline = $false) {
+            $files = @(Get-ChildItem -LiteralPath $folder -File -Recurse -Filter $(if ($publishedBaseline) { 'PROVENANCE-win32-x64.json' } else { 'PROVENANCE.json' }))
             if ($files.Count -ne 1) { throw "Expected one PROVENANCE.json in $folder" }
             $dir = $files[0].DirectoryName
             $p = Get-Content -LiteralPath $files[0].FullName -Raw | ConvertFrom-Json
             if ($p.product -ne 'lnwjud' -or $p.version -ne '5.8.7' -or $p.platform -ne 'win32' -or $p.arch -ne 'x64' -or $p.source.commit -ne $sha -or $p.source.dirty -ne $false) { throw "Wrong or dirty source in $folder" }
-            $lines = @(Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS.txt'))
+            $lines = @(Get-Content -LiteralPath (Join-Path $dir $(if ($publishedBaseline) { 'SHA256SUMS-win32-x64.txt' } else { 'SHA256SUMS.txt' })))
             $provenanceHash = (Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             if (-not ($lines -ccontains "$provenanceHash  PROVENANCE.json")) { throw 'Provenance hash mismatch' }
             foreach ($a in $p.artifacts) {
               $filename = Join-Path $dir ([string] $a.name)
-              if (-not (Test-Path -LiteralPath $filename -PathType Leaf)) { throw "Missing $($a.name)" }
+              if (-not (Test-Path -LiteralPath $filename -PathType Leaf)) {
+                if ($publishedBaseline -and $a.name -ne 'lnwjud-Setup-5.8.7.exe') { continue }
+                throw "Missing $($a.name)"
+              }
               $hash = (Get-FileHash -LiteralPath $filename -Algorithm SHA256).Hash.ToLowerInvariant()
               if ($hash -ne ([string] $a.sha256).ToLowerInvariant() -or -not ($lines -ccontains "$hash  $($a.name)")) { throw "Artifact hash mismatch: $($a.name)" }
             }
@@ -61,9 +79,9 @@ jobs:
             Write-Host "PASS: artifact hashes and clean source $sha"
             return @{ setup = (Join-Path $dir 'lnwjud-Setup-5.8.7.exe'); exeHash = ([string] $runtime[0].sha256).ToLowerInvariant() }
           }
-          $base = Verify-Evidence (Join-Path $env:RUNNER_TEMP 'rollback-baseline') 'ef9fda9b40166107e511cf7da2baa0087a32256e'
+          $base = Verify-Evidence (Join-Path $env:RUNNER_TEMP 'rollback-baseline') '1a0453ed0ef1de4cdf9ce1ba9edee8da0de8426b' $true
           $upgrade = Verify-Evidence (Join-Path $env:RUNNER_TEMP 'rollback-upgrade') '162347ec450651081fbf1581761897d1a70d1aa7'
-          if ($base.exeHash -eq $upgrade.exeHash) { throw 'Builds are identical: upgrade rehearsal would prove nothing' }
+          if ($base.exeHash -eq $upgrade.exeHash) { throw 'Published baseline and feature candidate are identical: downgrade rehearsal is invalid' }
           "BASELINE_SETUP=$($base.setup)" >> $env:GITHUB_ENV
           "BASELINE_EXE_SHA=$($base.exeHash)" >> $env:GITHUB_ENV
           "CANDIDATE_SETUP=$($upgrade.setup)" >> $env:GITHUB_ENV
