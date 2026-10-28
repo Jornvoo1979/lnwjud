@@ -6,7 +6,7 @@ const workspaceA = { id: 'f0c39e2d-8817-4d35-9a22-6b4178c2de91', realRootPath: '
 const workspaceB = { id: 'e0c39e2d-8817-4d35-9a22-6b4178c2de92', realRootPath: 'D:\\ProjectB' };
 const goal = { id: 'e0c39e2d-8817-4d35-9a22-6b4178c2de95', status: 'completed', revision: 9, objective: 'SECRET_SHOULD_NOT_APPEAR' };
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach((): void => { vi.unstubAllEnvs(); });
 
 describe('opt-in Production lifecycle metadata only', () => {
   it('does not send requests when disabled, without selection, or with wrong backend endpoint', async () => {
@@ -14,8 +14,8 @@ describe('opt-in Production lifecycle metadata only', () => {
     let enabled = false;
     let selected: typeof workspaceA | null = workspaceA;
     const capture = new ProductionAutomaticProjectMemory({
-      enabled: () => enabled, selectedWorkspace: async () => selected,
-      goalStatuses: async () => [goal], fetcher,
+      enabled: (): boolean => enabled, selectedWorkspace: async (): Promise<typeof workspaceA | null> => selected,
+      goalStatuses: async (): Promise<readonly typeof goal[]> => [goal], fetcher,
     });
     await capture.syncSelected();
     enabled = true;
@@ -38,8 +38,8 @@ describe('opt-in Production lifecycle metadata only', () => {
       return new Response('{}', { status: 200 });
     }) as unknown as typeof fetch;
     const capture = new ProductionAutomaticProjectMemory({
-      enabled: () => true, selectedWorkspace: async () => workspaceA,
-      goalStatuses: async () => [goal], fetcher,
+      enabled: (): boolean => true, selectedWorkspace: async (): Promise<typeof workspaceA> => workspaceA,
+      goalStatuses: async (): Promise<readonly typeof goal[]> => [goal], fetcher,
     });
     await capture.syncSelected();
     await capture.syncSelected();
@@ -63,8 +63,8 @@ describe('opt-in Production lifecycle metadata only', () => {
       return new Response('{}', { status: 200 });
     }) as unknown as typeof fetch;
     const capture = new ProductionAutomaticProjectMemory({
-      enabled: () => true, selectedWorkspace: async () => selected,
-      goalStatuses: async () => { selected = workspaceB; return [goal]; }, fetcher,
+      enabled: (): boolean => true, selectedWorkspace: async (): Promise<typeof workspaceA> => selected,
+      goalStatuses: async (): Promise<readonly typeof goal[]> => { selected = workspaceB; return [goal]; }, fetcher,
     });
     await capture.syncSelected();
     expect(seen.every((entry) => entry.startsWith('GET '))).toBe(true);
