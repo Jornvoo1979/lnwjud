@@ -1,0 +1,125 @@
+name: Isolated Windows Candidate Rollback Acceptance
+
+on:
+  push:
+    branches:
+      - feature/project-memory-production-dev-v587-20261027
+    paths:
+      - .github/workflows/candidate-installer-rollback-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: isolated-rollback-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download verified baseline candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-windows-installer-ef9fda9b40166107e511cf7da2baa0087a32256e
+          run-id: 40628391944
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/rollback-baseline
+
+      - name: Download verified upgraded candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-windows-installer-162347ec450651081fbf1581761897d1a70d1aa7
+          run-id: 40633169426
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/rollback-upgrade
+
+      - name: Verify identities and SHA-256 for both downloaded installers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Verify-Evidence([string] $folder, [string] $sha) {
+            $files = @(Get-ChildItem -LiteralPath $folder -File -Recurse -Filter PROVENANCE.json)
+            if ($files.Count -ne 1) { throw "Expected one PROVENANCE.json in $folder" }
+            $dir = $files[0].DirectoryName
+            $p = Get-Content -LiteralPath $files[0].FullName -Raw | ConvertFrom-Json
+            if ($p.product -ne 'lnwjud' -or $p.version -ne '5.8.7' -or $p.platform -ne 'win32' -or $p.arch -ne 'x64' -or $p.source.commit -ne $sha -or $p.source.dirty -ne $false) { throw "Wrong or dirty source in $folder" }
+            $lines = @(Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS.txt'))
+            $provenanceHash = (Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if (-not ($lines -ccontains "$provenanceHash  PROVENANCE.json")) { throw 'Provenance hash mismatch' }
+            foreach ($a in $p.artifacts) {
+              $filename = Join-Path $dir ([string] $a.name)
+              if (-not (Test-Path -LiteralPath $filename -PathType Leaf)) { throw "Missing $($a.name)" }
+              $hash = (Get-FileHash -LiteralPath $filename -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($hash -ne ([string] $a.sha256).ToLowerInvariant() -or -not ($lines -ccontains "$hash  $($a.name)")) { throw "Artifact hash mismatch: $($a.name)" }
+            }
+            $runtime = @($p.runtime | Where-Object { $_.relativePath -eq 'lnwjud.exe' })
+            if ($runtime.Count -ne 1) { throw 'Missing installed executable provenance' }
+            Write-Host "PASS: artifact hashes and clean source $sha"
+            return @{ setup = (Join-Path $dir 'lnwjud-Setup-5.8.7.exe'); exeHash = ([string] $runtime[0].sha256).ToLowerInvariant() }
+          }
+          $base = Verify-Evidence (Join-Path $env:RUNNER_TEMP 'rollback-baseline') 'ef9fda9b40166107e511cf7da2baa0087a32256e'
+          $upgrade = Verify-Evidence (Join-Path $env:RUNNER_TEMP 'rollback-upgrade') '162347ec450651081fbf1581761897d1a70d1aa7'
+          if ($base.exeHash -eq $upgrade.exeHash) { throw 'Builds are identical: upgrade rehearsal would prove nothing' }
+          "BASELINE_SETUP=$($base.setup)" >> $env:GITHUB_ENV
+          "BASELINE_EXE_SHA=$($base.exeHash)" >> $env:GITHUB_ENV
+          "CANDIDATE_SETUP=$($upgrade.setup)" >> $env:GITHUB_ENV
+          "CANDIDATE_EXE_SHA=$($upgrade.exeHash)" >> $env:GITHUB_ENV
+
+      - name: Install baseline, upgrade, roll back, then uninstall on disposable runner
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ("lnwjud-rollback-" + $env:GITHUB_RUN_ID)
+          $install = Join-Path $root 'app'
+          $data = Join-Path $root 'synthetic-user-data'
+          if ($root -match '\s' -or (Test-Path -LiteralPath $root)) { throw 'Unsafe or reused disposable path' }
+          [void](New-Item -Path $data -ItemType Directory -Force)
+          $marker = Join-Path $data 'synthetic-state.txt'
+          $value = "synthetic-$env:GITHUB_RUN_ID"
+          Set-Content -LiteralPath $marker -Value $value -NoNewline -Encoding UTF8
+          function Run-Nsis([string] $binary, [string] $args) {
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing NSIS executable: $binary" }
+            $info = [System.Diagnostics.ProcessStartInfo]::new()
+            $info.FileName = $binary
+            $info.Arguments = $args
+            $info.UseShellExecute = $false
+            $info.CreateNoWindow = $true
+            $proc = [System.Diagnostics.Process]::Start($info)
+            if ($null -eq $proc) { throw 'NSIS launch rejected' }
+            try {
+              if (-not $proc.WaitForExit(180000)) { $proc.Kill(); throw "NSIS timeout: $binary" }
+              if ($proc.ExitCode -ne 0) { throw "NSIS exited $($proc.ExitCode): $binary" }
+            } finally { $proc.Dispose() }
+          }
+          function Assert-Installed([string] $expected, [string] $phase) {
+            $exe = Join-Path $install 'lnwjud.exe'
+            $uninstaller = Join-Path $install 'uninstall.exe'
+            for($i=0; $i -lt 40 -and (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $uninstaller)); $i++) { Start-Sleep -Milliseconds 500 }
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -or -not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw "Installer did not produce application and uninstaller: $phase" }
+            $actual = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) { throw "Wrong installed executable hash at $phase" }
+            if ((Get-Content -LiteralPath $marker -Raw) -ne $value) { throw "Synthetic data corrupted at $phase" }
+            Write-Host "PASS: $phase"
+          }
+          try {
+            Run-Nsis $env:BASELINE_SETUP ("/S /currentuser /D=" + $install)
+            Assert-Installed $env:BASELINE_EXE_SHA 'baseline-install'
+            Run-Nsis $env:CANDIDATE_SETUP ("/S /currentuser /D=" + $install)
+            Assert-Installed $env:CANDIDATE_EXE_SHA 'candidate-upgrade'
+            Run-Nsis $env:BASELINE_SETUP ("/S /currentuser /D=" + $install)
+            Assert-Installed $env:BASELINE_EXE_SHA 'baseline-rollback'
+            Run-Nsis (Join-Path $install 'uninstall.exe') '/currentuser /S'
+            for($i=0; $i -lt 40 -and (Test-Path -LiteralPath (Join-Path $install 'lnwjud.exe')); $i++) { Start-Sleep -Milliseconds 500 }
+            if (Test-Path -LiteralPath (Join-Path $install 'lnwjud.exe')) { throw 'Uninstall left application executable' }
+            if ((Get-Content -LiteralPath $marker -Raw) -ne $value) { throw 'Uninstall corrupted synthetic data' }
+            Write-Host 'PASS: baseline installation, upgrade, binary-exact rollback, uninstall, synthetic-state retention'
+          } finally {
+            if (Test-Path -LiteralPath (Join-Path $install 'uninstall.exe') -PathType Leaf) {
+              try { Run-Nsis (Join-Path $install 'uninstall.exe') '/currentuser /S' } catch { Write-Warning 'Disposable runner cleanup could not finish' }
+            }
+          }
