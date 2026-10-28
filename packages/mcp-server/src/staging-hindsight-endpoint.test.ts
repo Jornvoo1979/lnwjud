@@ -34,10 +34,13 @@ describe('Staging Hindsight endpoint isolation', () => {
 
   it('reads only the Host-derived bank at the dedicated test endpoint', async () => {
     vi.stubEnv('LNWJUD_STAGING_HINDSIGHT_URL', 'http://127.0.0.1:18888');
-    const fetchMock = vi.fn(async (_url: URL) => ({
-      ok: true,
-      json: async () => ({ results: [{ text: 'synthetic only', id: 'fixture' }] }),
-    }));
+    const fetchMock = vi.fn(async (url: URL) => {
+      expect(url.protocol).toBe('http:');
+      return {
+        ok: true,
+        json: async (): Promise<{ results: { text: string; id: string }[] }> => ({ results: [{ text: 'synthetic only', id: 'fixture' }] }),
+      };
+    });
     vi.stubGlobal('fetch', fetchMock);
     const result = await recallStagingHindsight(bank, 'synthetic', 1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
