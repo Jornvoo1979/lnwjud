@@ -76,7 +76,7 @@ import {
   type WorkspaceScope,
 } from '@lnwjud/mcp-server';
 import { permissionProfiles, type PermissionProfile, type PermissionProfileName } from '@lnwjud/permissions';
-import type { ManagedProcess } from '@lnwjud/process';
+import { createWindowsMcpStdioOwner, type ManagedProcess } from '@lnwjud/process';
 import { PathExecutableResolver } from '@lnwjud/search';
 import {
   ALLOW_AI_DELETE_SETTING_KEY,
@@ -787,6 +787,7 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
     },
     callTimeoutMs: readSettings().mcpCallTimeoutMs,
     idleTimeoutMs: readSettings().mcpIdleTimeoutMs,
+    ...(nativeAuthority === undefined ? {} : { windowsMcpStdioOwner: createWindowsMcpStdioOwner(nativeAuthority.configuration) }),
   });
   const debugSessions = new DapSessionService();
   const mcpServices: McpApplicationServices = {
