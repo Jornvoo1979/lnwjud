@@ -211,14 +211,14 @@ export class SqliteGoalRepository implements GoalRepository, ScheduledContinuati
 
   private stageGoalCommit(before: GoalStatus | null, goal: GoalRecord, operation: GoalEventOperation): void {
     if (!this.eventOutbox || this.eventAuthorization?.() !== 'standard') return;
-    try {
-      this.eventOutbox.stage({workspaceId:goal.workspaceId,goalId:goal.id,revision:goal.revision,
-        operation,fromStatus:before,toStatus:goal.status,committedAt:goal.updatedAt});
-      this.stagedEvent = true;
-    } catch {
-      // Never let a memory side-effect abort an authoritative Goal mutation.
-      console.warn('[goal-postcommit] durable event unavailable; no retry');
-    }
+    // Atomicity invariant: a trusted, enabled publisher must never allow a
+    // committed Goal revision without its matching durable outbox event.
+    // Staging takes place inside the same SQLite transaction; a staging error
+    // propagates to transaction() so both the Goal mutation and event roll back.
+    // With no attached publisher, or with Full Bypass, this feature is opt-out.
+    this.eventOutbox.stage({workspaceId:goal.workspaceId,goalId:goal.id,revision:goal.revision,
+      operation,fromStatus:before,toStatus:goal.status,committedAt:goal.updatedAt});
+    this.stagedEvent = true;
   }
 
   public async acquire(request: AcquireGoalRecordRequest): Promise<AcquireGoalRecordResult> {
