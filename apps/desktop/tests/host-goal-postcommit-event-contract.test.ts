@@ -25,12 +25,12 @@ const payload: SignedGoalEventPayload = {
 };
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 
-function fixture(authorized = true) {
+function fixture(authorized = true): { subscriber: import('../src/main/host-goal-postcommit-event-contract.js').TrustedGoalEventSubscriber; claimed: Set<string> } {
   const claimed = new Set<string>();
   const subscriber = {
-    isAuthorized: () => authorized,
-    trustedPublicKey: () => publicKey,
-    claimOnce: (_workspace: string, _goal: string, rev: number, id: string) => {
+    isAuthorized: (): boolean => authorized,
+    trustedPublicKey: (): import('node:crypto').KeyObject => publicKey,
+    claimOnce: (_workspace: string, _goal: string, rev: number): boolean => {
       // Durable claim identity is workspace + Goal + revision; an altered eventId
       // must not make the same committed revision writable twice.
       const key = _workspace + ':' + _goal + ':' + rev;

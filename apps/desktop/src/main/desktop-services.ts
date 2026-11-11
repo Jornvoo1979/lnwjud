@@ -866,20 +866,20 @@ export function createDesktopRuntime(dataPath: string, options: DesktopRuntimeOp
   let activityLogDiagnostic: ((key: string, message: string) => void) | null = null;
   // Host-only Production checkpoint candidate. Defaults OFF; never infer a bank ID.
   // The Host retains one-use native approval for every actual Hindsight write.
-  (() => {
+  ((): null => {
     const config = options.productionGoalMemory;
     const approve = options.hostMutationApprovalProvider;
     if (config?.enabled !== true || approve === undefined) return null;
     database.applyMigration({ id: '026_upm_goal_checkpoint_events_v1', sql: GOAL_MEMORY_MIGRATION_SQL });
     const journal = new SqliteGoalMemoryJournal(() => database.connection);
-    const getSelectedScope = async () => {
+    const getSelectedScope = async (): Promise<import('./production-goal-memory-core.js').HostProjectScope | null> => {
       const selectedId = settingsRepository.get(selectedWorkspaceSettingKey);
       if (selectedId === null) return null;
       const selected = await resolveSelectedWorkspace(workspaceService, settingsRepository);
       return selected !== null && selected.id === selectedId
         ? { workspaceId: selected.id, realRootPath: selected.realRootPath } : null;
     };
-    const getPersistedGoal = async (goalId: string) => {
+    const getPersistedGoal = async (goalId: string): Promise<import('./production-goal-memory-core.js').HostGoalRecord | null> => {
       const record = await goalRepository.getById(goalId);
       if (record === null) return null;
       // Host-owned Goal checkpoint only: no caller-supplied decision is trusted.

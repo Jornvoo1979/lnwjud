@@ -120,7 +120,7 @@ export function selectChangedHostGoal(before: readonly HostGoalSnapshot[], after
 export function safeMilestoneText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const text = value.trim().replace(/\s+/g, ' ');
-  if (text.length < 8 || text.length > 220 || /[\r\n\x00-\x1f]/.test(value)) return null;
+  if (text.length < 8 || text.length > 220 || [...value].some((char): boolean => char.charCodeAt(0) < 32)) return null;
   if (/(?:password|passwd|secret|token|api[\s_-]?key|bearer|private[\s_-]?key|credential|authorization|otp|รหัสผ่าน|โทเคน|คีย์ลับ)/i.test(text)) return null;
   if (/(?:https?:\/\/|[A-Za-z]:\\|\\\\|\/\w+\/|@[\w.-]+\.[a-z]{2,}|(?:[A-Za-z0-9+/]{36,}={0,2})|\b[A-Za-z0-9_-]{30,}\b|(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]{12,})/i.test(text)) return null;
   return text;

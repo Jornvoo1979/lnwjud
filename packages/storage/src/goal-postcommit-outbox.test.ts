@@ -10,7 +10,7 @@ const transition={
   fromStatus:'active' as const,toStatus:'active' as const,
   committedAt:'2026-11-08T10:00:00.000Z',
 };
-function fixture(){
+function fixture(): { db: DatabaseSync; outbox: SqliteGoalPostCommitOutbox } {
   const db=new DatabaseSync(':memory:');
   const outbox=new SqliteGoalPostCommitOutbox(db);
   outbox.initialize();

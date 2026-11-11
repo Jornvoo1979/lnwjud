@@ -18,7 +18,7 @@ export const GOAL_MEMORY_MIGRATION_SQL=`CREATE TABLE IF NOT EXISTS upm_goal_chec
 export class SqliteGoalMemoryJournal implements GoalMemoryJournal {
   private readonly provider:()=>DatabaseSync;
   constructor(database:DatabaseSync|(()=>DatabaseSync)){
-    this.provider=typeof database==='function'?database:()=>database;
+    this.provider=typeof database==='function'?database:():DatabaseSync=>database;
     const c=this.provider();
     if(!c||typeof c.exec!=='function'||typeof c.prepare!=='function')throw Error('Trusted SQLite database required');
   }

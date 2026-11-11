@@ -41,7 +41,7 @@ interface Row {event_id:string;payload_json:string;state:string;}
 export class SqliteGoalPostCommitOutbox implements HostGoalOutboxWriter {
   private readonly provider:()=>DatabaseSync;
   constructor(db:DatabaseSync|(()=>DatabaseSync)) {
-    this.provider=typeof db==='function'?db:()=>db;
+    this.provider=typeof db==='function'?db:():DatabaseSync=>db;
     if(typeof this.provider()?.prepare!=='function')throw Error('HOST_SQLITE_REQUIRED');
   }
   initialize():void { this.provider().exec(GOAL_POSTCOMMIT_OUTBOX_SQL); }

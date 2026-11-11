@@ -13,13 +13,13 @@ describe('Milestone data minimization and consent preview',()=>{
   it('does not request Native Consent or journal writes for unsafe Host decision text',async()=>{
     let approvals=0, dispatches=0;
     const boundary=new ProductionGoalMemoryBoundary({
-      getSelectedScope:()=>({workspaceId:'project-1',realRootPath:'D:\\fixture'}),
-      getPersistedGoal:()=>({id:goalId,workspaceId:'project-1',status:'active',revision:4,decisionRecorded:true,
+      getSelectedScope:(): import('../src/main/production-goal-memory-core.js').HostProjectScope =>({workspaceId:'project-1',realRootPath:'D:\\fixture'}),
+      getPersistedGoal:(): import('../src/main/production-goal-memory-core.js').HostGoalRecord =>({id:goalId,workspaceId:'project-1',status:'active',revision:4,decisionRecorded:true,
         decisionSummary:'API token=PRIVATE_SECRET must never be sent'}),
-      getAuthorizedBank:()=> 'approved-bank',
-      requestApproval:()=>{approvals++;return true;},
-      journal:{begin:()=>{dispatches++;return true;},markDispatched:()=>{},settle:()=>{}},
-      fetchImpl:async()=>{throw Error('network forbidden');},
+      getAuthorizedBank:(): string => 'approved-bank',
+      requestApproval:(): boolean =>{approvals++;return true;},
+      journal:{begin:(): boolean =>{dispatches++;return true;},markDispatched:(): void =>{},settle:(): void =>{}},
+      fetchImpl:async(): Promise<never> =>{throw Error('network forbidden');},
     });
     expect(await boundary.recordGoalEvent({
       phase:'completed',resultCode:'SUCCESS',eventId:'a2e60d04-36b8-4e6f-84f3-b2583d62f409',

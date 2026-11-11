@@ -30,21 +30,21 @@ describe('Host-verified significant decision milestone', () => {
     let approvals = 0;
     let dispatches = 0;
     const boundary = new ProductionGoalMemoryBoundary({
-      getSelectedScope: async () => ({ workspaceId: 'project-1', realRootPath: 'D:\\project-1' }),
-      getPersistedGoal: async () => ({
+      getSelectedScope: async (): Promise<import('../src/main/production-goal-memory-core.js').HostProjectScope> => ({ workspaceId: 'project-1', realRootPath: 'D:\\project-1' }),
+      getPersistedGoal: async (): Promise<import('../src/main/production-goal-memory-core.js').HostGoalRecord> => ({
         id: goalId,
         workspaceId: 'project-1',
         status: 'active',
         revision: 3,
       }),
-      getAuthorizedBank: () => 'bank-1',
-      requestApproval: () => { approvals++; return true; },
+      getAuthorizedBank: (): string => 'bank-1',
+      requestApproval: (): boolean => { approvals++; return true; },
       journal: {
-        begin: () => { dispatches++; return true; },
-        markDispatched: () => { dispatches++; },
-        settle: () => { dispatches++; },
+        begin: (): boolean => { dispatches++; return true; },
+        markDispatched: (): void => { dispatches++; },
+        settle: (): void => { dispatches++; },
       },
-      fetchImpl: async () => { throw new Error('No network calls allowed for forged milestone'); },
+      fetchImpl: async (): Promise<never> => { throw new Error('No network calls allowed for forged milestone'); },
     });
     expect(await boundary.recordGoalEvent(event)).toEqual({
       status: 'skipped',
@@ -57,12 +57,12 @@ describe('Host-verified significant decision milestone', () => {
   it('rejects an unverified next-step flag without Native Approval or journal dispatch', async () => {
     let approvals = 0;
     const boundary = new ProductionGoalMemoryBoundary({
-      getSelectedScope: async () => ({ workspaceId: 'project-1', realRootPath: 'D:\\project-1' }),
-      getPersistedGoal: async () => ({ id: goalId, workspaceId: 'project-1', status: 'active', revision: 3 }),
-      getAuthorizedBank: () => 'bank-1',
-      requestApproval: () => { approvals++; return true; },
-      journal: { begin: () => { throw new Error('not reached'); }, markDispatched: () => {}, settle: () => {} },
-      fetchImpl: async () => { throw new Error('not reached'); },
+      getSelectedScope: async (): Promise<import('../src/main/production-goal-memory-core.js').HostProjectScope> => ({ workspaceId: 'project-1', realRootPath: 'D:\\project-1' }),
+      getPersistedGoal: async (): Promise<import('../src/main/production-goal-memory-core.js').HostGoalRecord> => ({ id: goalId, workspaceId: 'project-1', status: 'active', revision: 3 }),
+      getAuthorizedBank: (): string => 'bank-1',
+      requestApproval: (): boolean => { approvals++; return true; },
+      journal: { begin: (): never => { throw new Error('not reached'); }, markDispatched: (): void => {}, settle: (): void => {} },
+      fetchImpl: async (): Promise<never> => { throw new Error('not reached'); },
     });
     expect(await boundary.recordGoalEvent({ ...event, decisionRecorded: false, nextStepRecorded: true }))
       .toEqual({ status: 'skipped', reason: 'committed_next_step_not_verified' });
@@ -72,22 +72,22 @@ describe('Host-verified significant decision milestone', () => {
   it('rejects a changed persisted revision before approving a decision', async () => {
     let approvals = 0;
     const boundary = new ProductionGoalMemoryBoundary({
-      getSelectedScope: async () => ({ workspaceId: 'project-1', realRootPath: 'D:\\project-1' }),
-      getPersistedGoal: async () => ({
+      getSelectedScope: async (): Promise<import('../src/main/production-goal-memory-core.js').HostProjectScope> => ({ workspaceId: 'project-1', realRootPath: 'D:\\project-1' }),
+      getPersistedGoal: async (): Promise<import('../src/main/production-goal-memory-core.js').HostGoalRecord> => ({
         id: goalId,
         workspaceId: 'project-1',
         status: 'active',
         revision: 4,
         decisionRecorded: true,
       }),
-      getAuthorizedBank: () => 'bank-1',
-      requestApproval: () => { approvals++; return true; },
+      getAuthorizedBank: (): string => 'bank-1',
+      requestApproval: (): boolean => { approvals++; return true; },
       journal: {
-        begin: () => true,
-        markDispatched: () => {},
-        settle: () => {},
+        begin: (): boolean => true,
+        markDispatched: (): void => {},
+        settle: (): void => {},
       },
-      fetchImpl: async () => { throw new Error('No network calls allowed for stale milestone'); },
+      fetchImpl: async (): Promise<never> => { throw new Error('No network calls allowed for stale milestone'); },
     });
     expect(await boundary.recordGoalEvent(event)).toEqual({
       status: 'skipped',

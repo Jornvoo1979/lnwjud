@@ -21,10 +21,10 @@ describe('Authoritative Goal Repository post-COMMIT events',()=>{
       const goals=new SqliteGoalRepository(db);
       let wakeCount=0;
       goals.attachTrustedGoalPostCommitOutbox({
-        stage:()=>{throw new Error('TEST_OUTBOX_INSERT_FAILED');},
+        stage:(): never => {throw new Error('TEST_OUTBOX_INSERT_FAILED');},
       },()=> 'standard',()=>{wakeCount++;});
       const service=new GoalContinuationService(workspaces,goals,{
-        now:()=>new Date('2026-11-08T10:00:00.000Z'),
+        now:(): Date => new Date('2026-11-08T10:00:00.000Z'),
       });
       const result=await service.runGoal(actor,{
         workspaceId,goalKey:'outbox-must-not-silently-fail',
@@ -52,13 +52,13 @@ describe('Authoritative Goal Repository post-COMMIT events',()=>{
       let allowStage=true;
       let wakes=0;
       goals.attachTrustedGoalPostCommitOutbox({
-        stage:transition=>{
+        stage:(transition): string => {
           if(!allowStage)throw new Error('TEST_OUTBOX_INSERT_FAILED');
           return outbox.stage(transition);
         },
       },()=> 'standard',()=>{wakes++;});
       const service=new GoalContinuationService(workspaces,goals,{
-        now:()=>new Date('2026-11-08T10:00:00.000Z'),
+        now:(): Date => new Date('2026-11-08T10:00:00.000Z'),
       });
       const created=await service.runGoal(actor,{
         workspaceId,goalKey:'checkpoint-atomic-outbox',
@@ -104,9 +104,9 @@ describe('Authoritative Goal Repository post-COMMIT events',()=>{
       let fullBypass=false;
       let woke=0;
       goals.attachTrustedGoalPostCommitOutbox(outbox,
-        ()=>fullBypass?'full_bypass':'standard',()=>{woke++;});
+        (): 'full_bypass' | 'standard' => fullBypass?'full_bypass':'standard',()=>{woke++;});
       const service=new GoalContinuationService(workspaces,goals,{
-        now:()=>new Date('2026-11-08T10:00:00.000Z'),
+        now:(): Date => new Date('2026-11-08T10:00:00.000Z'),
       });
       const created=await service.runGoal(actor,{
         workspaceId,goalKey:'one-real-goal',objective:'Host-committed checkpoint test',
