@@ -706,7 +706,8 @@ jobs:
 
   windows-release-tests:
     name: Windows Workspace Release Tests
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    # The user-approved release candidate uses the same workspace gate as main.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110')
     runs-on: windows-latest
 
     steps:
@@ -757,7 +758,8 @@ jobs:
   windows-release-build:
     # Direct non-main pushes already run the native platform contract matrix;
     # keep this portable gate for PRs, main, and explicit manual dispatches.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    # Permit full verified Windows packaging only on the explicitly approved release branch.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110')
     name: Windows Release Build and Checks
     runs-on: windows-latest
 
@@ -864,12 +866,12 @@ jobs:
 
 
       - name: Run pull-request verification gate
-        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        if: github.event_name == 'pull_request' || (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/release/v5.9.0-upm-ci-20261110')
         shell: powershell
         run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/verify-release.ps1 -SkipWindowsPackaging -SkipWorkspaceTests
 
       - name: Run authoritative release verification gate
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110')
         shell: powershell
         env:
           # electron-builder signs only when both real production certificate secrets exist.
@@ -879,7 +881,7 @@ jobs:
         run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/verify-release.ps1 -SkipWorkspaceTests
 
       - name: Verify packaged Windows legacy-profile startup
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110')
         env:
           LNWJUD_PACKAGED_EXECUTABLE: ${{ github.workspace }}/apps/desktop/dist/installers/win-unpacked/lnwjud.exe
         run: pnpm --filter @lnwjud/desktop exec playwright test --config playwright.config.ts --grep "Windows upgrade opens"
@@ -896,7 +898,7 @@ jobs:
           retention-days: 14
 
       - name: Upload verified Windows release artifact
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110')
         uses: actions/upload-artifact@v7
         with:
           name: windows-release-${{ github.sha }}
@@ -925,7 +927,7 @@ jobs:
     # Preserve the branch-protection check name. Both Windows jobs must pass
     # before this required status can succeed or a release can use the run.
     name: Authoritative Release Verification (Windows)
-    if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110'))
     needs: [windows-release-tests, windows-release-build, update-package-attestation]
     runs-on: ubuntu-24.04
     steps:
