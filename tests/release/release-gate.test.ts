@@ -119,7 +119,7 @@ describe('MVP release verification gate', () => {
     expect(workflow.indexOf('Install ripgrep for E2E search')).toBeLessThan(workflow.indexOf('Run authoritative release verification gate'));
   });
 
-  it('keeps PR verification fast while reserving Windows packaging for exact-main CI', async () => {
+  it('keeps PR verification fast while restricting Windows packaging to main or the approved candidate', async () => {
     const script = await readFile(path.join(repositoryRoot, 'scripts', 'verify-release.ps1'), 'utf8');
     const workflow = await readFile(path.join(repositoryRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
 
@@ -138,7 +138,9 @@ describe('MVP release verification gate', () => {
     expect(workflow).toContain("github.ref != 'refs/heads/main'");
     expect(workflow).toContain('Run authoritative release verification gate');
     expect(workflow).toContain("github.ref == 'refs/heads/main'");
-    expect(workflow).toContain("(github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("(github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110')");
+    expect(workflow).toContain("if: github.ref == 'refs/heads/main' && github.event_name == 'push'");
+    expect(workflow).toContain("UPDATE_PACKAGE_REQUIRED: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}");
   });
 
   it('requires both parallel Windows jobs before the protected release check succeeds', async () => {
@@ -164,12 +166,13 @@ describe('MVP release verification gate', () => {
     expect(requiredJob).toContain('process.env.UPDATE_PACKAGE_RESULT === (process.env.UPDATE_PACKAGE_REQUIRED === "true" ? "success" : "skipped")');
   });
 
-  it('does not repeat the full Windows verification gate on direct non-main pushes', async () => {
+  it('runs full Windows verification only on main or the explicitly approved candidate', async () => {
     const workflow = (await readFile(path.join(repositoryRoot, '.github', 'workflows', 'ci.yml'), 'utf8')).replaceAll('\r\n', '\n');
     const verifyStart = workflow.indexOf('  verify:\n');
     expect(verifyStart).toBeGreaterThan(-1);
     const verifyJob = workflow.slice(verifyStart, workflow.indexOf('\n\n', verifyStart));
-    expect(verifyJob).toContain("if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')");
+    expect(verifyJob).toContain("if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110'))");
+    expect(verifyJob).not.toContain("github.ref == 'refs/heads/release/v*'");
   });
 
   it('splits desktop tests into isolated native shards for the contract matrix', async () => {
