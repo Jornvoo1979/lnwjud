@@ -229,6 +229,10 @@ describe('MVP release verification gate', () => {
     expect(ci).toContain('actions/upload-artifact@v7');
     expect(ci).toContain('apps/desktop/dist/installers/latest.yml');
     expect(ci).toContain('windows-release-${{ github.sha }}');
+    expect(ci).toContain('windows-setup-${{ github.sha }}');
+    expect(ci).toContain('windows-portable-${{ github.sha }}');
+    expect(ci).toContain('apps/desktop/dist/installers/lnwjud-Setup-*.exe');
+    expect(ci).toContain('apps/desktop/dist/installers/lnwjud-Portable-*.exe');
     expect(ci).toContain('apps/desktop/dist/installers/*.exe');
     expect(ci.indexOf('Run authoritative release verification gate')).toBeLessThan(ci.indexOf('Upload verified Windows release artifact'));
     expect(ci).toContain('name: native-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}');

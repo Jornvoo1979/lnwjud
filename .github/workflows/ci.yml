@@ -913,6 +913,35 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+      # Retain the canonical full release bundle above for release automation.
+      # Split download copies stay below the connector's 512 MiB per-file limit.
+      - name: Upload verified Windows Setup separately
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-setup-${{ github.sha }}
+          path: |
+            apps/desktop/dist/installers/lnwjud-Setup-*.exe
+            apps/desktop/dist/installers/lnwjud-Setup-*.exe.blockmap
+            apps/desktop/dist/installers/SHA256SUMS.txt
+            apps/desktop/dist/installers/PROVENANCE.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload verified Windows Portable separately
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/release/v5.9.0-upm-ci-20261110'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-portable-${{ github.sha }}
+          path: |
+            apps/desktop/dist/installers/lnwjud-Portable-*.exe
+            apps/desktop/dist/installers/SHA256SUMS.txt
+            apps/desktop/dist/installers/PROVENANCE.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
   update-package-attestation:
     name: Attested Windows Update Package
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
